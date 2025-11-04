@@ -37,7 +37,8 @@ class Settings(BaseSettings):
     requests_per_minute: int = 100
     
     class Config:
-        env_file = ".env"
+        # Only load .env if not running in Docker (where env vars are set in docker-compose)
+        env_file = None if os.getenv("DATABASE_URL") else ".env"
         env_file_encoding = "utf-8"
 
 

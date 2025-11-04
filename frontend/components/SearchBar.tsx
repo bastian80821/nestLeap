@@ -33,7 +33,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
       <form onSubmit={handleSubmit} className="relative">
         <div className="relative">
           <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-            <Search className="h-5 w-5 text-neutral-400" />
+            <Search className="h-5 w-5 text-neutral-400 dark:text-neutral-500" />
           </div>
           
           <input
@@ -42,10 +42,12 @@ const SearchBar: React.FC<SearchBarProps> = ({
             onChange={handleInputChange}
             placeholder={placeholder}
             disabled={isLoading}
-            className="block w-full pl-12 pr-16 py-4 text-lg border border-neutral-300 rounded-xl 
+            className="block w-full pl-12 pr-16 py-4 text-lg border border-neutral-300 dark:border-black-500 rounded-xl 
                      focus:ring-2 focus:ring-primary-500 focus:border-transparent 
-                     placeholder-neutral-400 bg-white shadow-sm
-                     disabled:bg-neutral-50 disabled:text-neutral-500"
+                     placeholder-neutral-400 dark:placeholder-neutral-500 
+                     bg-white dark:bg-black-700 text-neutral-900 dark:text-neutral-100 shadow-sm
+                     disabled:bg-neutral-50 dark:disabled:bg-black-600 disabled:text-neutral-500 dark:disabled:text-neutral-400
+                     transition-colors"
             autoComplete="off"
             spellCheck="false"
           />
@@ -78,32 +80,32 @@ const SearchBar: React.FC<SearchBarProps> = ({
       </form>
       
       <div className="mt-4 text-center">
-        <p className="text-sm text-neutral-600">
+        <p className="text-sm text-neutral-600 dark:text-neutral-400">
           Try popular stocks: 
           <button 
             onClick={() => onSearch('AAPL')}
-            className="ml-2 text-primary-600 hover:text-primary-700 font-medium"
+            className="ml-2 text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium transition-colors"
           >
             AAPL
           </button>
-          <span className="mx-1 text-neutral-400">•</span>
+          <span className="mx-1 text-neutral-400 dark:text-neutral-500">•</span>
           <button 
             onClick={() => onSearch('GOOGL')}
-            className="text-primary-600 hover:text-primary-700 font-medium"
+            className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium transition-colors"
           >
             GOOGL
           </button>
-          <span className="mx-1 text-neutral-400">•</span>
+          <span className="mx-1 text-neutral-400 dark:text-neutral-500">•</span>
           <button 
             onClick={() => onSearch('MSFT')}
-            className="text-primary-600 hover:text-primary-700 font-medium"
+            className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium transition-colors"
           >
             MSFT
           </button>
-          <span className="mx-1 text-neutral-400">•</span>
+          <span className="mx-1 text-neutral-400 dark:text-neutral-500">•</span>
           <button 
             onClick={() => onSearch('TSLA')}
-            className="text-primary-600 hover:text-primary-700 font-medium"
+            className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium transition-colors"
           >
             TSLA
           </button>

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from ..database import SessionLocal
 from ..models import MarketArticle, MarketNewsSummary, GeminiApiCallLog
+from ..agents.news_history_agent import NewsHistoryAgent
 import difflib
 
 
@@ -58,44 +59,25 @@ class SimpleMarketNews:
     
     async def get_market_news(self, hours_back: int = 24, max_articles: int = 10) -> list:
         """
-        Always fetch/process new articles, merge/deduplicate with DB, update DB if new articles are more relevant, and return the top 10 most relevant articles from the last 24 hours.
+        Return cached articles from database (no processing). 
+        Processing now happens only via scheduled_news_cycle() every 3 hours.
         """
         try:
-            async with asyncio.timeout(30):
-                extended_hours = max(hours_back, 48)
-                logger.info(f"Fetching market news for the last {extended_hours} hours (requested: {hours_back})")
-                cutoff_time = datetime.now(timezone.utc) - timedelta(hours=extended_hours)
-
-            # 1. Fetch fresh articles from sources
-            raw_articles = await self._fetch_raw_articles(extended_hours)
-            logger.info(f"Fetched {len(raw_articles)} raw articles from sources")
-
-            # 2. Process new articles through LLM (limit to 10 for speed)
-            processed_articles = []
-            articles_to_process = raw_articles[:min(10, max_articles)]
-            logger.info(f"Processing {len(articles_to_process)} articles through LLM")
-            for i, article in enumerate(articles_to_process):
-                try:
-                    logger.info(f"Processing article {i+1}/{len(articles_to_process)}: {article['title'][:50]}...")
-                    processed = await self._process_article_with_llm(article)
-                    if processed:
-                        processed_articles.append(processed)
-                        await self._store_article(processed)
-                except Exception as e:
-                    logger.warning(f"Failed to process article {i+1}: {str(e)}")
-                    continue
-            logger.info(f"Successfully processed {len(processed_articles)} articles")
-
-            # 3. Query all articles from DB from last 24h
+            logger.info(f"Returning cached market news from database for last {hours_back} hours")
+            
+            # Simply query articles from database - no processing
             db = SessionLocal()
             try:
                 all_recent = db.query(MarketArticle).filter(
-                    MarketArticle.published_at >= datetime.now(timezone.utc) - timedelta(hours=24)
+                    MarketArticle.published_at >= datetime.now(timezone.utc) - timedelta(hours=hours_back)
                 ).order_by(desc(MarketArticle.published_at)).all()
+                
+                # Format articles for frontend
                 formatted = self._format_articles_for_frontend(all_recent)
                 for a in formatted:
                     a['relevance_score'] = self._relevance_score(a)
-                # Sort by relevance, then recency, and take top 10
+                
+                # Sort by relevance and recency, take top articles
                 def utc_ts(dt):
                     if dt is None:
                         return 0
@@ -107,58 +89,189 @@ class SimpleMarketNews:
                     if dt.tzinfo is None:
                         dt = dt.replace(tzinfo=timezone.utc)
                     return dt.timestamp()
+                
                 top = sorted(formatted, key=lambda x: (-x['relevance_score'], -utc_ts(x.get('published_at'))))[:max_articles]
-                # Resort by recency for frontend
                 top = sorted(top, key=lambda x: -utc_ts(x.get('published_at')))
-
-                # --- NEW: Generate and store LLM summary of top 10 articles ---
-                if top:
-                    try:
-                        # Prepare input for LLM: headlines and bullet points
-                        summary_input = "\n".join([
-                            f"{i+1}. {a['brief_headline']}\n- " + "\n- ".join(a['bullet_points'])
-                            for i, a in enumerate(top)
-                        ])
-                        summary_prompt = f"""
-You are a professional financial news analyst. Given the following 10 most relevant market news article summaries, write a concise, actionable overview of what is happening in the markets right now. Your summary MUST be 3-4 sentences, avoid generic statements, and should NOT explain what any indicator or index is. Focus on the most important, actionable themes and developments only.
-
-ARTICLE SUMMARIES:\n{summary_input}\n
-SUMMARY (3-4 sentences, no explanations):
-"""
-                        llm_response = await self.llm_model.generate_content_async(summary_prompt)
-                        summary_text = llm_response.text.strip() if hasattr(llm_response, 'text') else str(llm_response)
-                        # Store in DB, accumulating all summaries
-                        article_ids = [a.get('id') for a in top if a.get('id')]
-                        db_summary = MarketNewsSummary(
-                            summary=summary_text,
-                            article_ids=article_ids
-                        )
-                        db.add(db_summary)
-                        db.commit()
-                        logger.info("Stored new market news summary in DB.")
-                        # Log Gemini API call
-                        try:
-                            db_log = SessionLocal()
-                            log_entry = GeminiApiCallLog(
-                                timestamp=datetime.utcnow(),
-                                purpose='market_news_summary',
-                                prompt=summary_prompt
-                            )
-                            db_log.add(log_entry)
-                            db_log.commit()
-                            db_log.close()
-                        except Exception as e:
-                            logger.warning(f"Failed to log Gemini API call: {e}")
-                    except Exception as e:
-                        logger.error(f"Failed to generate/store market news summary: {str(e)}")
-                # --- END NEW ---
-
+                
+                logger.info(f"Returned {len(top)} cached articles from database")
                 return top
+                
             finally:
                 db.close()
+                
         except Exception as e:
-            logger.error(f"Error getting market news: {str(e)}")
+            logger.error(f"Error getting cached market news: {str(e)}")
             return []
+    
+    async def scheduled_news_cycle(self, force: bool = False) -> Dict:
+        """
+        Full news processing cycle - runs every 3 hours or on force refresh.
+        Processes articles first, then generates summary.
+        """
+        try:
+            logger.info(f"Starting scheduled news cycle (force={force})")
+            
+            # Check if we should skip (unless forced)
+            if not force:
+                db = SessionLocal()
+                try:
+                    latest_summary = db.query(MarketNewsSummary).order_by(MarketNewsSummary.created_at.desc()).first()
+                    if latest_summary:
+                        hours_since_last = (datetime.now(timezone.utc) - latest_summary.created_at).total_seconds() / 3600
+                        if hours_since_last < 3:
+                            logger.info(f"Recent processing exists ({hours_since_last:.1f}h ago), skipping cycle")
+                            return {"status": "skipped", "reason": "recent_processing_exists", "hours_since_last": hours_since_last}
+                finally:
+                    db.close()
+            
+            # PHASE 1: Fetch and process articles
+            logger.info("PHASE 1: Fetching and processing articles...")
+            
+            extended_hours = 48  # Look back further for comprehensive scan
+            raw_articles = await self._fetch_raw_articles(extended_hours)
+            logger.info(f"Fetched {len(raw_articles)} raw articles from sources")
+            
+            # Process articles through LLM (limit to 15 for comprehensive but manageable processing)
+            processed_articles = []
+            articles_to_process = raw_articles[:15]  # Increased limit for 3-hour cycle
+            logger.info(f"Processing {len(articles_to_process)} articles through LLM")
+            
+            for i, article in enumerate(articles_to_process):
+                try:
+                    logger.info(f"Processing article {i+1}/{len(articles_to_process)}: {article['title'][:50]}...")
+                    processed = await self._process_article_with_llm(article)
+                    if processed:
+                        processed_articles.append(processed)
+                        await self._store_article(processed)
+                except Exception as e:
+                    logger.warning(f"Failed to process article {i+1}: {str(e)}")
+                    continue
+            
+            logger.info(f"PHASE 1 COMPLETE: Successfully processed {len(processed_articles)} articles")
+            
+            # PHASE 2: Generate historical context
+            logger.info("PHASE 2: Generating historical context...")
+            
+            history_agent = NewsHistoryAgent()
+            historical_context = await history_agent.generate_historical_context(days_back=5)
+            logger.info(f"Historical context generated: {historical_context.get('historical_context', 'None')[:100]}...")
+            
+            # PHASE 3: Generate summary from processed articles with historical context
+            logger.info("PHASE 3: Generating news summary with historical context...")
+            
+            # Get top articles from database for summary
+            db = SessionLocal()
+            try:
+                all_recent = db.query(MarketArticle).filter(
+                    MarketArticle.published_at >= datetime.now(timezone.utc) - timedelta(hours=24)
+                ).order_by(desc(MarketArticle.published_at)).all()
+                
+                formatted = self._format_articles_for_frontend(all_recent)
+                for a in formatted:
+                    a['relevance_score'] = self._relevance_score(a)
+                
+                def utc_ts(dt):
+                    if dt is None:
+                        return 0
+                    if isinstance(dt, str):
+                        try:
+                            dt = datetime.fromisoformat(dt)
+                        except Exception:
+                            return 0
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    return dt.timestamp()
+                
+                top = sorted(formatted, key=lambda x: (-x['relevance_score'], -utc_ts(x.get('published_at'))))[:10]
+                
+                if top:
+                    # Generate enhanced summary with historical context
+                    summary_input = "\n".join([
+                        f"{i+1}. {a['brief_headline']}\n- " + "\n- ".join(a['bullet_points'])
+                        for i, a in enumerate(top)
+                    ])
+                    
+                    # Include historical context in prompt if available
+                    context_section = ""
+                    if historical_context.get('historical_context') and historical_context.get('confidence', 0) > 0.3:
+                        context_section = f"""
+MARKET CONTEXT ({historical_context.get('context_timeframe', 'recent days')}):
+{historical_context['historical_context']}
+
+PERSISTENT THEMES: {', '.join(historical_context.get('persistent_themes', []))}
+SENTIMENT TREND: {historical_context.get('sentiment_trend', 'mixed')}
+
+"""
+                    
+                    summary_prompt = f"""
+You are a professional financial news analyst. {context_section}Given the following 10 most relevant market news article summaries, write a concise, actionable overview of what is happening in the markets right now. 
+
+{f"Build on the historical context above while highlighting today's new developments. " if context_section else ""}Focus on the most important themes and actionable insights. Your summary MUST be 3-4 sentences, avoid generic statements, and should NOT explain what any indicator or index is.
+
+TODAY'S ARTICLE SUMMARIES:
+{summary_input}
+
+SUMMARY (3-4 sentences, {f"acknowledging context and " if context_section else ""}focusing on key developments):
+"""
+                    
+                    llm_response = await self.llm_model.generate_content_async(summary_prompt)
+                    summary_text = llm_response.text.strip() if hasattr(llm_response, 'text') else str(llm_response)
+                    
+                    # Store summary in database
+                    article_ids = [a.get('id') for a in top if a.get('id')]
+                    db_summary = MarketNewsSummary(
+                        summary=summary_text,
+                        article_ids=article_ids
+                    )
+                    db.add(db_summary)
+                    db.commit()
+                    
+                    logger.info("PHASE 3 COMPLETE: Generated and stored news summary with historical context")
+                    
+                    result = {
+                        "status": "success",
+                        "message": "Full news cycle completed with historical context",
+                        "articles_processed": len(processed_articles),
+                        "summary_generated": True,
+                        "summary": summary_text,
+                        "historical_context": historical_context.get('historical_context', 'None'),
+                        "context_confidence": historical_context.get('confidence', 0),
+                        "forced": force
+                    }
+                else:
+                    logger.warning("No articles available for summary generation")
+                    result = {
+                        "status": "partial_success", 
+                        "message": "Articles processed but no summary generated",
+                        "articles_processed": len(processed_articles),
+                        "summary_generated": False,
+                        "historical_context": historical_context.get('historical_context', 'None'),
+                        "forced": force
+                    }
+                    
+            finally:
+                db.close()
+                
+            logger.info(f"Scheduled news cycle completed: {result}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in scheduled news cycle: {e}")
+            return {"status": "error", "error": str(e)}
+    
+    async def force_refresh_summary(self) -> Dict:
+        """Force refresh - triggers full news cycle (articles + summary)"""
+        try:
+            logger.info("Force refresh triggered - running full news cycle...")
+            
+            # Use the scheduled news cycle with force=True
+            result = await self.scheduled_news_cycle(force=True)
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in force refresh: {e}")
+            return {"status": "error", "error": str(e)}
     
     async def _fetch_raw_articles(self, hours_back: int) -> List[Dict]:
         """Fetch raw articles from RSS feeds and direct listings."""
@@ -386,7 +499,7 @@ SUMMARY (3-4 sentences, no explanations):
             IMPORTANT: If the article is primarily about events that occurred more than 1 month before the article's published date, or is a retrospective/recap of past events, you MUST set 'market_signal' to 'neutral' regardless of the content's tone or implications. Only assign 'bullish' or 'bearish' if the news is about recent or upcoming events (within 1 month of the article's published date).
 
             {{
-                "brief_headline": "Concise market implication (60 chars max)",
+                "brief_headline": "A clear, grammatical news headline based on the article summary (not keywords - write a proper sentence)",
                 "bullet_points": ["Key insight 1", "Key insight 2", "Key insight 3"],
                 "market_signal": "bullish|bearish|neutral",
                 "confidence": 0.8,
@@ -568,7 +681,7 @@ SUMMARY (3-4 sentences, no explanations):
         formatted_articles = []
         
         for article in db_articles:
-            # Parse bullet points from ai_summary
+            # Parse bullet points from ai_summary field
             bullet_points = []
             if article.ai_summary:
                 bullet_points = [point.strip() for point in article.ai_summary.split('\n') if point.strip()]
@@ -584,7 +697,7 @@ SUMMARY (3-4 sentences, no explanations):
                 'url': article.url,
                 'source': article.source,
                 'published_at': article.published_at,
-                'content_length': 0,  # Not stored in DB
+                'content_length': 0,  # Not stored in current schema
                 'has_full_content': True  # Assume true for stored articles
             }
             formatted_articles.append(formatted_article)

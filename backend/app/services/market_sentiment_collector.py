@@ -33,7 +33,7 @@ class MarketSentimentCollector:
         # Configure Gemini if API key is available
         if hasattr(settings, 'google_api_key') and settings.google_api_key:
             genai.configure(api_key=settings.google_api_key)
-            self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
+            self.model = genai.GenerativeModel('gemini-2.5-flash')
         else:
             self.model = None
         
@@ -965,7 +965,7 @@ Keep the analysis professional, informative, and under 400 words."""
                                 score = data["fear_and_greed"].get("score")
                                 rating = data["fear_and_greed"].get("rating", "Unknown")
                                 return {
-                                    "value": float(score),
+                                    "value": int(round(float(score))),
                                     "label": rating,
                                     "source": "cnn",
                                     "timestamp": datetime.utcnow().isoformat()
@@ -976,7 +976,7 @@ Keep the analysis professional, informative, and under 400 words."""
                             # FearGreedMeter format varies
                             if "fearGreedIndex" in data:
                                 return {
-                                    "value": float(data["fearGreedIndex"]["now"]),
+                                    "value": int(round(float(data["fearGreedIndex"]["now"]))),
                                     "label": data["fearGreedIndex"].get("rating", "Unknown"),
                                     "source": "feargreedmeter",
                                     "timestamp": datetime.utcnow().isoformat()
@@ -988,7 +988,7 @@ Keep the analysis professional, informative, and under 400 words."""
                             if "data" in data and len(data["data"]) > 0:
                                 item = data["data"][0]
                                 return {
-                                    "value": float(item["value"]),
+                                    "value": int(round(float(item["value"]))),
                                     "label": item.get("value_classification", "Unknown"),
                                     "source": "alternative",
                                     "timestamp": datetime.utcnow().isoformat()
@@ -1017,7 +1017,7 @@ Keep the analysis professional, informative, and under 400 words."""
                 
                 if existing:
                     # Update existing record
-                    existing.value = fg_data["value"]
+                    existing.value = int(round(float(fg_data["value"])))
                     existing.timestamp = current_timestamp
                     existing.data_source = fg_data["source"]
                     logger.info(f"Updated Fear & Greed Index: {fg_data['value']} ({fg_data['label']})")
@@ -1025,7 +1025,7 @@ Keep the analysis professional, informative, and under 400 words."""
                     # Create new record
                     indicator = MarketIndicator(
                         indicator_type="fear_greed_index",
-                        value=fg_data["value"],
+                        value=int(round(float(fg_data["value"]))),
                         timestamp=current_timestamp,
                         data_source=fg_data["source"],
                         is_valid=True

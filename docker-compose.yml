@@ -38,11 +38,12 @@ services:
       - DATABASE_URL=postgresql://username:password@postgres:5432/stock_platform
       - REDIS_URL=redis://redis:6379/0
       - DEBUG=True
-      - GOOGLE_API_KEY=AIzaSyCb_UCb-qQUXvJs6oac2OvyvsdqC_09sOg
+      - GOOGLE_API_KEY=AIzaSyCijkzRELCAF2oNsKXDykDYyM6c0XhUUsE
       - LLM_MODEL=gemini-2.5-flash
       - ALPHA_VANTAGE_API_KEY=U9NQ5J3D0NR5QTHD
       - ALPHAVANTAGE_API_KEY=U9NQ5J3D0NR5QTHD
       - FRED_API_KEY=219488a4c8e55c607fb4148cfc0d06a6
+      - FMP_API_KEY=demo
     volumes:
       - ./backend:/app
     depends_on:

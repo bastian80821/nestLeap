@@ -35,7 +35,8 @@ class EconomicFundamentalsCollector:
         'unemployment_rate',
         'retail_sales',
         'industrial_production',
-        'home_price_index'
+        'home_price_index',
+        'treasury_10y_yield'
     ]
     
     def __init__(self):
@@ -45,7 +46,7 @@ class EconomicFundamentalsCollector:
         # Configure Gemini if API key is available
         if hasattr(settings, 'google_api_key') and settings.google_api_key:
             genai.configure(api_key=settings.google_api_key)
-            self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
+            self.model = genai.GenerativeModel('gemini-2.5-flash')
         else:
             self.model = None
         
@@ -60,19 +61,20 @@ class EconomicFundamentalsCollector:
                 'period_type': 'quarterly',
                 'importance': 'high'
             },
-            # CPI YoY Inflation
+            # CPI YoY Inflation (calculated from raw CPI index)
             'cpi_yoy_inflation': {
-                'fred_id': 'CPALTT01USM659N',
+                'fred_id': 'CPIAUCSL',  # Use raw CPI index, calculate YoY ourselves
                 'name': 'CPI YoY Inflation Rate',
                 'category': 'inflation',
                 'unit': '%',
                 'period_type': 'monthly',
-                'importance': 'high'
+                'importance': 'high',
+                'needs_yoy_calculation': True  # Flag to calculate YoY percentage change
             },
-            # Fed Funds Rate
+            # Fed Funds Rate (using upper target rate set by Fed)
             'fed_funds_rate': {
-                'fred_id': 'FEDFUNDS',
-                'name': 'Federal Funds Rate',
+                'fred_id': 'DFEDTARU',
+                'name': 'Federal Funds Target Rate (Upper)',
                 'category': 'interest_rates',
                 'unit': '%',
                 'period_type': 'monthly',
@@ -113,6 +115,15 @@ class EconomicFundamentalsCollector:
                 'unit': 'index',
                 'period_type': 'monthly',
                 'importance': 'medium'
+            },
+            # 10-Year Treasury Yield
+            'treasury_10y_yield': {
+                'fred_id': 'GS10',
+                'name': '10-Year Treasury Yield',
+                'category': 'interest_rates',
+                'unit': '%',
+                'period_type': 'daily',
+                'importance': 'high'
             }
         }
         
@@ -169,7 +180,9 @@ class EconomicFundamentalsCollector:
                 'limit': 100
             }
             
-            async with aiohttp.ClientSession() as session:
+            # Add timeout to prevent hanging
+            timeout = aiohttp.ClientTimeout(total=10.0, connect=5.0)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -187,6 +200,9 @@ class EconomicFundamentalsCollector:
                         logger.error(f"FRED API error for {series_id}: {response.status}")
                         return None
                         
+        except asyncio.TimeoutError:
+            logger.warning(f"FRED API timeout for {series_id}")
+            return None
         except Exception as e:
             logger.error(f"Error fetching FRED data for {series_id}: {str(e)}")
             return None
@@ -238,12 +254,19 @@ class EconomicFundamentalsCollector:
         if indicator_key not in self.indicators_config:
             logger.error(f"Unknown indicator: {indicator_key}")
             return None
+        
+        # Special case: Get Treasury yield from live market data (much faster and more current)
+        if indicator_key == 'treasury_10y_yield':
+            return await self._get_live_treasury_data()
             
         config = self.indicators_config[indicator_key]
         fred_data = await self.collect_fred_data(config['fred_id'])
         
         if not fred_data:
             return None
+        
+        # Check if we need to calculate YoY percentage change (for CPI inflation)
+        needs_yoy_calc = config.get('needs_yoy_calculation', False)
             
         # Process all observations if storing full history, otherwise just the latest
         observations_to_process = fred_data if store_full_history else [fred_data[0]]
@@ -258,10 +281,31 @@ class EconomicFundamentalsCollector:
                 except (ValueError, TypeError):
                     previous_value = None
             
+            # Calculate the value (YoY if needed)
+            current_value = float(observation['value'])
+            
+            if needs_yoy_calc:
+                # For YoY calculation, we need the value from 12 months ago
+                yoy_value = None
+                if i + 12 < len(fred_data):
+                    try:
+                        value_12mo_ago = float(fred_data[i + 12]['value'])
+                        # Calculate YoY percentage change
+                        yoy_value = ((current_value - value_12mo_ago) / value_12mo_ago) * 100
+                        logger.debug(f"CPI YoY: {current_value:.2f} vs {value_12mo_ago:.2f} 12mo ago = {yoy_value:.2f}%")
+                    except (ValueError, TypeError, ZeroDivisionError):
+                        yoy_value = None
+                
+                # Skip if we can't calculate YoY (need 12 months of history)
+                if yoy_value is None:
+                    continue
+                    
+                current_value = yoy_value
+            
             indicator_data = {
                 'indicator_name': indicator_key,
                 'category': config['category'],
-                'value': float(observation['value']),
+                'value': current_value,
                 'unit': config['unit'],
                 'period_type': config['period_type'],
                 'reference_date': datetime.strptime(observation['date'], '%Y-%m-%d').date(),
@@ -274,6 +318,58 @@ class EconomicFundamentalsCollector:
             indicator_data_list.append(indicator_data)
         
         return indicator_data_list
+    
+    async def _get_live_treasury_data(self) -> Optional[List[Dict]]:
+        """Get live 10-Year Treasury yield from market data collector (same source as live stocks)."""
+        try:
+            from .historical_market_collector import HistoricalMarketCollector
+            
+            # Use our existing live market data collector
+            market_collector = HistoricalMarketCollector()
+            
+            # Get live treasury data (^TNX symbol)
+            treasury_data = await market_collector.collect_indicator_data('treasury_10y', '^TNX')
+            
+            if not treasury_data:
+                logger.warning("Failed to get live Treasury data, falling back to FRED")
+                return None
+            
+            # Get historical data for previous value calculation
+            db = SessionLocal()
+            try:
+                # Get the most recent Treasury yield from our database for comparison
+                recent_treasury = db.query(EconomicIndicator).filter(
+                    EconomicIndicator.indicator_name == 'treasury_10y_yield'
+                ).order_by(EconomicIndicator.reference_date.desc()).first()
+                
+                previous_value = recent_treasury.value if recent_treasury else None
+                    
+            finally:
+                db.close()
+            
+            # Convert market data to fundamentals format
+            config = self.indicators_config['treasury_10y_yield']
+            
+            treasury_fundamental = [{
+                'indicator_name': 'treasury_10y_yield',
+                'category': config['category'],
+                'value': treasury_data['value'],
+                'unit': config['unit'],
+                'period_type': 'daily',  # Live data is daily
+                'reference_date': datetime.now().date(),
+                'release_date': datetime.now().date(),
+                'source': f"live_market_{treasury_data['data_source']}",
+                'previous_value': previous_value,
+                'display_name': config['name'],
+                'importance': config['importance']
+            }]
+            
+            logger.info(f"✅ Got LIVE Treasury yield: {treasury_data['value']:.2f}% from {treasury_data['data_source']}")
+            return treasury_fundamental
+            
+        except Exception as e:
+            logger.error(f"Error getting live Treasury data: {e}")
+            return None
 
     async def collect_bea_gdp_yoy_growth(self) -> list:
         """Fetch quarterly real GDP YoY growth rates from BEA API (Table 1.1.11, Line 1)."""
@@ -292,49 +388,73 @@ class EconomicFundamentalsCollector:
             'ResultFormat': 'JSON'
         }
         results = []
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params) as response:
-                if response.status != 200:
-                    logger.error(f'BEA API error: {response.status}')
-                    return []
-                data = await response.json()
-                if 'Data' not in data.get('BEAAPI', {}).get('Results', {}):
-                    logger.error(f'BEA API response missing Data key: {json.dumps(data)}')
-                    return []
-                for row in data['BEAAPI']['Results']['Data']:
-                    if row['LineNumber'] == '1':  # GDP
-                        # Format: 2025Q1, 2024Q4, etc.
-                        period = row['TimePeriod']
-                        year = int(period[:4])
-                        q = int(period[-1])
-                        # FRED/BEA convention: Q1 = Jan, Q2 = Apr, Q3 = Jul, Q4 = Oct
-                        month = {1: 1, 2: 4, 3: 7, 4: 10}[q]
-                        reference_date = date(year, month, 1)
+        try:
+            # Add timeout to prevent hanging
+            timeout = aiohttp.ClientTimeout(total=15.0, connect=5.0)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, params=params) as response:
+                    if response.status != 200:
+                        logger.error(f'BEA API error: {response.status}')
+                        return []
+                    data = await response.json()
+                    if 'Data' not in data.get('BEAAPI', {}).get('Results', {}):
+                        logger.error(f'BEA API response missing Data key: {json.dumps(data)}')
+                        return []
+                    
+                    table_data = data['BEAAPI']['Results']['Data']
+                    
+                    # Filter for GDP data (Line 1, real GDP percent change)
+                    gdp_data = [row for row in table_data if row.get('LineDescription', '').lower().find('percent change from preceding period') != -1]
+                    
+                    # Process recent quarters only (last 8 quarters)
+                    for row in gdp_data[-8:]:
                         try:
+                            year = int(row['TimePeriod'][:4])
+                            quarter = int(row['TimePeriod'][5:])
                             value = float(row['DataValue'])
-                        except Exception:
+                            
+                            # Convert to reference date (end of quarter)
+                            quarter_end_month = quarter * 3
+                            reference_date = date(year, quarter_end_month, 1)
+                            
+                            # Calculate quarter label
+                            quarter_label = f"Q{quarter} {year}"
+                            
+                            results.append({
+                                'indicator_name': 'gdp_yoy_growth_bea',
+                                'category': 'gdp',
+                                'value': value,
+                                'unit': '%',
+                                'period_type': 'quarterly',
+                                'reference_date': reference_date,
+                                'release_date': date.today(),
+                                'source': 'bea_api',
+                                'quarter_label': quarter_label,
+                                'display_name': 'Real GDP YoY Growth (BEA)',
+                                'importance': 'high'
+                            })
+                        except (ValueError, KeyError) as e:
+                            logger.warning(f'Error parsing BEA GDP row: {e}')
                             continue
-                        results.append({
-                            'indicator_name': 'gdp_yoy_growth_bea',
-                            'category': 'gdp',
-                            'value': value,
-                            'unit': '%',
-                            'period_type': 'quarterly',
-                            'reference_date': reference_date,
-                            'release_date': datetime.now().date(),
-                            'source': 'bea',
-                            'previous_value': None,
-                            'display_name': 'Real GDP YoY Growth (BEA)',
-                            'importance': 'high'
-                        })
-        return results
+                    
+                    logger.info(f'Successfully fetched {len(results)} GDP quarters from BEA API')
+                    return results
+                    
+        except asyncio.TimeoutError:
+            logger.warning('BEA API timeout - using fallback data if available')
+            return []
+        except Exception as e:
+            logger.error(f'Error fetching BEA GDP data: {e}')
+            return []
 
     async def crawl_bea_gdp_web(self) -> list:
         """Crawl the BEA GDP page for the latest quarter and growth rate. Only return if newer than API data."""
         url = 'https://www.bea.gov/data/gdp/gross-domestic-product'
         results = []
         try:
-            async with aiohttp.ClientSession() as session:
+            # Add timeout to prevent hanging
+            timeout = aiohttp.ClientTimeout(total=10.0, connect=5.0)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url) as response:
                     if response.status != 200:
                         logger.error(f'BEA web crawl error: {response.status}')
@@ -493,7 +613,28 @@ class EconomicFundamentalsCollector:
             db.close()
 
     async def generate_fundamentals_analysis(self) -> Optional[Dict]:
-        """Generate LLM analysis of current economic fundamentals using full time series and structured JSON prompt/response."""
+        """Generate LLM analysis using the new EconomicFundamentalsAgent"""
+        try:
+            from ..agents.economic_fundamentals_agent import EconomicFundamentalsAgent
+            
+            # Use the new agent for analysis
+            agent = EconomicFundamentalsAgent()
+            analysis = await agent.get_latest_analysis()
+            
+            # If no recent analysis exists, trigger agent cycle
+            if 'error' in analysis:
+                await agent.run_cycle()
+                analysis = await agent.get_latest_analysis()
+            
+            return analysis if 'error' not in analysis else None
+            
+        except Exception as e:
+            logger.error(f"Error generating fundamentals analysis with agent: {e}")
+            # Fallback to original analysis method
+            return await self._generate_legacy_analysis()
+            
+    async def _generate_legacy_analysis(self) -> Optional[Dict]:
+        """Legacy analysis method as fallback"""
         if not self.model:
             logger.warning("LLM not configured, skipping fundamentals analysis")
             return None
@@ -512,7 +653,7 @@ class EconomicFundamentalsCollector:
             allowed_indicators = {
                 'gdp': ['gdp_yoy_growth_bea'],
                 'inflation': ['cpi_yoy_inflation'],
-                'interest_rates': ['fed_funds_rate'],
+                'interest_rates': ['fed_funds_rate', 'treasury_10y_yield'],
                 'employment': ['unemployment_rate'],
                 'home_prices': ['home_price_index'],
                 'manufacturing': ['industrial_production']
@@ -556,10 +697,14 @@ class EconomicFundamentalsCollector:
                 + news_section +
                 "Return a JSON object with: "
                 "overall_assessment (bullish, neutral, or bearish), "
+                "economic_cycle_stage (early_cycle, mid_cycle, late_cycle, recession), "
+                "monetary_policy_stance (accommodative, neutral, restrictive), "
+                "inflation_outlook (rising, stable, moderating, declining), "
+                "employment_outlook (strong, moderate, weak, deteriorating), "
                 "confidence_level (0-1), and explanation (4 sentences, plain text, no markdown). "
                 "Focus only on the data provided, news, and your own knowledge of macroeconomics."
                 "\n\nECONOMIC_INDICATORS_TIME_SERIES = " + json.dumps(time_series, indent=2) + "\n\n"
-                "Respond ONLY with a valid JSON object like: {\"overall_assessment\": \"neutral\", \"confidence_level\": 0.7, \"explanation\": \"...\"}"
+                "Respond ONLY with a valid JSON object like: {\"overall_assessment\": \"neutral\", \"economic_cycle_stage\": \"late_cycle\", \"monetary_policy_stance\": \"restrictive\", \"inflation_outlook\": \"moderating\", \"employment_outlook\": \"moderate\", \"confidence_level\": 0.7, \"explanation\": \"...\"}"
             )
             # Log Gemini API call
             try:
@@ -653,10 +798,10 @@ class EconomicFundamentalsCollector:
                 overall_assessment=analysis_data.get('overall_assessment'),
                 confidence_level=analysis_data.get('confidence_level'),
                 explanation=analysis_data.get('explanation'),
-                economic_cycle_stage=None,
-                inflation_outlook=None,
-                employment_outlook=None,
-                monetary_policy_stance=None,
+                economic_cycle_stage=analysis_data.get('economic_cycle_stage'),
+                inflation_outlook=analysis_data.get('inflation_outlook'),
+                employment_outlook=analysis_data.get('employment_outlook'),
+                monetary_policy_stance=analysis_data.get('monetary_policy_stance'),
                 key_insights=None,
                 market_implications=None,
                 sector_impacts=None,

@@ -2,29 +2,36 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer utilities {
-  .animate-fade-in {
-    animation: fadeIn 0.3s ease-in-out;
-  }
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
   --foreground-rgb: 0, 0, 0;
   --background-start-rgb: 214, 219, 220;
   --background-end-rgb: 255, 255, 255;
+  
+  /* Toast variables for light mode */
+  --toast-bg: #fff;
+  --toast-color: #374151;
+  --toast-border: #e5e7eb;
+  --toast-success-bg: #f0fdf4;
+  --toast-success-color: #15803d;
+  --toast-success-border: #bbf7d0;
+  --toast-error-bg: #fef2f2;
+  --toast-error-color: #dc2626;
+  --toast-error-border: #fecaca;
+}
+
+.dark {
+  /* Toast variables for OLED dark mode */
+  --toast-bg: #111111;
+  --toast-color: #f9fafb;
+  --toast-border: #333333;
+  --toast-success-bg: #064e3b;
+  --toast-success-color: #6ee7b7;
+  --toast-success-border: #065f46;
+  --toast-error-bg: #7f1d1d;
+  --toast-error-color: #fca5a5;
+  --toast-error-border: #991b1b;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -68,7 +75,7 @@ a {
   }
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar for light mode */
 ::-webkit-scrollbar {
   width: 6px;
 }
@@ -87,6 +94,19 @@ a {
   background: #a8a8a8;
 }
 
+/* Custom scrollbar for OLED dark mode */
+.dark ::-webkit-scrollbar-track {
+  background: #111111;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #333333;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #555555;
+}
+
 /* Custom components */
 @layer components {
   .btn-primary {
@@ -94,27 +114,27 @@ a {
   }
   
   .btn-secondary {
-    @apply bg-neutral-200 hover:bg-neutral-300 text-neutral-800 font-medium px-4 py-2 rounded-lg transition-colors duration-200;
+    @apply bg-neutral-200 hover:bg-neutral-300 dark:bg-black-600 dark:hover:bg-black-500 text-neutral-800 dark:text-neutral-200 font-medium px-4 py-2 rounded-lg transition-colors duration-200;
   }
   
   .card {
-    @apply bg-white rounded-xl shadow-sm border border-neutral-200 p-6;
+    @apply bg-white dark:bg-black-700 rounded-xl shadow-sm border border-neutral-200 dark:border-black-500 p-6;
   }
   
   .badge-buy {
-    @apply bg-success-100 text-success-700 px-3 py-1 rounded-full text-sm font-medium;
+    @apply bg-success-100 dark:bg-success-900 text-success-700 dark:text-success-400 px-3 py-1 rounded-full text-sm font-medium;
   }
   
   .badge-hold {
-    @apply bg-warning-100 text-warning-700 px-3 py-1 rounded-full text-sm font-medium;
+    @apply bg-warning-100 dark:bg-warning-900 text-warning-700 dark:text-warning-400 px-3 py-1 rounded-full text-sm font-medium;
   }
   
   .badge-sell {
-    @apply bg-danger-100 text-danger-700 px-3 py-1 rounded-full text-sm font-medium;
+    @apply bg-danger-100 dark:bg-danger-900 text-danger-700 dark:text-danger-400 px-3 py-1 rounded-full text-sm font-medium;
   }
   
   .input {
-    @apply w-full px-4 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all duration-200;
+    @apply w-full px-4 py-2 border border-neutral-300 dark:border-black-500 dark:bg-black-700 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all duration-200;
   }
   
   .loading-spinner {
@@ -130,5 +150,16 @@ a {
   
   .animate-slide-up {
     animation: slideUp 0.3s ease-out;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 } 
