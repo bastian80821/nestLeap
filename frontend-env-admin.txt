@@ -1,0 +1,13 @@
+# Admin Frontend Environment Variables
+# This configuration is for the admin/debug site
+# Copy these to Vercel environment variables for admin deployment
+
+# Backend API URL (same backend as public site)
+NEXT_PUBLIC_API_URL=https://api.yoursite.com
+
+# Admin mode - MUST be true for admin site
+NEXT_PUBLIC_ADMIN_MODE=true
+
+# Admin API Key (IMPORTANT: Must match backend ADMIN_API_KEY exactly)
+NEXT_PUBLIC_ADMIN_API_KEY=your_secure_random_admin_key_here
+

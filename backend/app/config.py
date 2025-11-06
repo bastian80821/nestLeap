@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     bls_api_key: str = ""   # Bureau of Labor Statistics API key
     bea_api_key: str = ""
     
+    # Admin Authentication
+    admin_api_key: str = ""  # For protecting admin/debug endpoints
+    
     # Redis
     redis_url: str = "redis://localhost:6379/0"
     

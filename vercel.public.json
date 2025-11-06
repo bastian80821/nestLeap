@@ -1,0 +1,25 @@
+{
+  "name": "stock-platform-public",
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "outputDirectory": "frontend/.next",
+  "framework": "nextjs",
+  "installCommand": "cd frontend && npm install",
+  "env": {
+    "NEXT_PUBLIC_API_URL": {
+      "description": "Backend API URL",
+      "value": "https://api.yoursite.com"
+    },
+    "NEXT_PUBLIC_ADMIN_MODE": {
+      "description": "Admin mode - must be false for public site",
+      "value": "false"
+    }
+  },
+  "regions": ["iad1"],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/frontend/$1"
+    }
+  ]
+}
+

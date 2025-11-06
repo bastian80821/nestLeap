@@ -1,10 +1,11 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from app.models import GeminiApiCallLog
 from app.database import SessionLocal
+from app.auth import verify_admin_key
 
 router = APIRouter()
 
-@router.get("/api/debug/gemini-calls")
+@router.get("/api/debug/gemini-calls", dependencies=[Depends(verify_admin_key)])
 async def get_gemini_api_calls():
     db = SessionLocal()
     try:

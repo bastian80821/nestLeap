@@ -14,6 +14,9 @@ import Dashboards from '@/components/Dashboards';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { toast } from 'react-hot-toast';
 
+// Check if running in admin mode
+const ADMIN_MODE = process.env.NEXT_PUBLIC_ADMIN_MODE === 'true';
+
 export default function HomePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -69,7 +72,7 @@ export default function HomePage() {
                   { id: 'sentiment', label: 'Momentum' },
                   { id: 'news', label: 'News' },
                   { id: 'fundamentals', label: 'Fundamentals' },
-                  { id: 'debug', label: 'Debug' },
+                  ...(ADMIN_MODE ? [{ id: 'debug', label: 'Debug' }] : []),
                 ].map((tab) => (
                   <button
                     key={tab.id}
@@ -160,7 +163,7 @@ export default function HomePage() {
               <Dashboards />
             </div>
           )}
-          {activeTab === 'debug' && (
+          {ADMIN_MODE && activeTab === 'debug' && (
             <div className="animate-fade-in">
               <DebugGeminiCalls />
             </div>

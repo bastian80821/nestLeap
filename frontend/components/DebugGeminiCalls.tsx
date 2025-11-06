@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { PlayCircle, Loader, CheckCircle, XCircle, RefreshCw, Clock } from 'lucide-react';
+import { adminGet, adminPost, adminFetch } from '@/lib/adminApi';
 
 interface GeminiCallLog {
   timestamp: string;
@@ -51,9 +52,7 @@ const DebugGeminiCalls: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('http://localhost:8000/api/debug/gemini-calls');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      const data = await adminGet('/api/debug/gemini-calls');
       setLogs(data.logs || data); // support both {logs, total} and array
       setTotal(data.total || (Array.isArray(data) ? data.length : null));
     } catch (err) {
@@ -66,22 +65,19 @@ const DebugGeminiCalls: React.FC = () => {
   const checkForRunningBatch = async () => {
     // ALWAYS check backend for currently running batch (don't rely on localStorage)
     try {
-      const response = await fetch('http://localhost:8000/api/stocks/current-batch');
-      if (response.ok) {
-        const data = await response.json();
-        
-        if (data.job_id && data.status === 'running') {
-          // Found running batch - start polling
-          localStorage.setItem('batch_job_id', data.job_id);
-          setBatchStatus(data);
-          setBatchLoading(true);
-          pollBatchStatus(data.job_id);
-        } else if (data.job_id) {
-          // Batch exists but completed/failed
-          setBatchStatus(data);
-          setBatchLoading(false);
-          localStorage.removeItem('batch_job_id');
-        }
+      const data = await adminGet('/api/stocks/current-batch');
+      
+      if (data.job_id && data.status === 'running') {
+        // Found running batch - start polling
+        localStorage.setItem('batch_job_id', data.job_id);
+        setBatchStatus(data);
+        setBatchLoading(true);
+        pollBatchStatus(data.job_id);
+      } else if (data.job_id) {
+        // Batch exists but completed/failed
+        setBatchStatus(data);
+        setBatchLoading(false);
+        localStorage.removeItem('batch_job_id');
       }
     } catch (err) {
       console.error('Error checking for running batch:', err);
@@ -109,14 +105,7 @@ const DebugGeminiCalls: React.FC = () => {
     setRecentCompletions([]);
     
     try {
-      const response = await fetch('http://localhost:8000/api/stocks/batch-analyze', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      const data = await response.json();
+      const data = await adminPost('/api/stocks/batch-analyze');
       
       if (data.status === 'error') {
         setBatchError(data.error || 'Failed to start batch analysis');
@@ -142,14 +131,7 @@ const DebugGeminiCalls: React.FC = () => {
     setRecentCompletions([]);
     
     try {
-      const response = await fetch('http://localhost:8000/api/stocks/batch-analyze-failed', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      const data = await response.json();
+      const data = await adminPost('/api/stocks/batch-analyze-failed');
       
       if (data.status === 'error') {
         setBatchError(data.error || 'Failed to start failed-only analysis');
@@ -186,8 +168,7 @@ const DebugGeminiCalls: React.FC = () => {
     
     const poll = async () => {
       try {
-        const response = await fetch(`http://localhost:8000/api/stocks/batch-status/${jobId}`);
-        const data = await response.json();
+        const data = await adminGet(`/api/stocks/batch-status/${jobId}`);
         
         // Track new completions
         if (data.completed_stocks > previousCompleted) {
@@ -222,11 +203,8 @@ const DebugGeminiCalls: React.FC = () => {
   
   const fetchRecentCompletions = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/stocks/recent-completions?limit=10');
-      if (response.ok) {
-        const data = await response.json();
-        setRecentCompletions(data.tickers || []);
-      }
+      const data = await adminGet('/api/stocks/recent-completions?limit=10');
+      setRecentCompletions(data.tickers || []);
     } catch (err) {
       console.error('Error fetching recent completions:', err);
     }
@@ -235,11 +213,8 @@ const DebugGeminiCalls: React.FC = () => {
   const fetchFailedAnalyses = async () => {
     setFailedLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/api/stocks/failed-analyses');
-      if (response.ok) {
-        const data = await response.json();
-        setFailedAnalyses(data.failed_analyses || []);
-      }
+      const data = await adminGet('/api/stocks/failed-analyses');
+      setFailedAnalyses(data.failed_analyses || []);
     } catch (err) {
       console.error('Error fetching failed analyses:', err);
     } finally {
@@ -484,8 +459,7 @@ const DebugGeminiCalls: React.FC = () => {
             onClick={async () => {
               setRefreshing(prev => ({ ...prev, sentiment: true }));
               try {
-                const res = await fetch('http://localhost:8000/api/market-sentiment/force-refresh', { method: 'POST' });
-                const data = await res.json();
+                const data = await adminPost('/api/market-sentiment/force-refresh');
                 alert(data.success ? 'Sentiment refreshed!' : `Error: ${data.error}`);
               } catch (err) {
                 alert('Failed to refresh sentiment');
@@ -513,9 +487,8 @@ const DebugGeminiCalls: React.FC = () => {
             onClick={async () => {
               setRefreshing(prev => ({ ...prev, fundamentals: true }));
               try {
-                const res = await fetch('http://localhost:8000/api/economic-fundamentals/force-refresh', { method: 'POST' });
-                const data = await res.json();
-                alert(data.status === 'success' ? 'Fundamentals refreshed!' : `Error: ${data.error}`);
+                const data = await adminPost('/api/fundamentals/force-refresh');
+                alert(data.status === 'processing' ? 'Fundamentals refreshed!' : `Error: ${data.error}`);
               } catch (err) {
                 alert('Failed to refresh fundamentals');
               } finally {
@@ -542,9 +515,8 @@ const DebugGeminiCalls: React.FC = () => {
             onClick={async () => {
               setRefreshing(prev => ({ ...prev, news: true }));
               try {
-                const res = await fetch('http://localhost:8000/api/market-news/force-refresh', { method: 'POST' });
-                const data = await res.json();
-                alert(data.status === 'success' ? 'News refreshed!' : `Error: ${data.error}`);
+                const data = await adminPost('/api/market-news/force-refresh-summary');
+                alert(data.status === 'processing' ? 'News refreshed!' : `Error: ${data.error}`);
               } catch (err) {
                 alert('Failed to refresh news');
               } finally {
@@ -571,9 +543,8 @@ const DebugGeminiCalls: React.FC = () => {
             onClick={async () => {
               setRefreshing(prev => ({ ...prev, opportunities: true }));
               try {
-                const res = await fetch('http://localhost:8000/api/stocks/scan-opportunities', { method: 'POST' });
-                const data = await res.json();
-                alert(data.scan_completed ? 'Opportunities scanned!' : `Error: ${data.error}`);
+                const data = await adminPost('/api/stocks/scan-opportunities');
+                alert(data.status === 'success' ? 'Opportunities scanned!' : `Error: ${data.error}`);
               } catch (err) {
                 alert('Failed to scan opportunities');
               } finally {

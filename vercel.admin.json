@@ -1,0 +1,28 @@
+{
+  "name": "stock-platform-admin",
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "outputDirectory": "frontend/.next",
+  "framework": "nextjs",
+  "installCommand": "cd frontend && npm install",
+  "env": {
+    "NEXT_PUBLIC_API_URL": {
+      "description": "Backend API URL",
+      "value": "https://api.yoursite.com"
+    },
+    "NEXT_PUBLIC_ADMIN_MODE": {
+      "description": "Admin mode - must be true for admin site",
+      "value": "true"
+    },
+    "NEXT_PUBLIC_ADMIN_API_KEY": {
+      "description": "Admin API key for authenticated endpoints"
+    }
+  },
+  "regions": ["iad1"],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/frontend/$1"
+    }
+  ]
+}
+

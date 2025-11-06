@@ -21,6 +21,7 @@ from contextlib import asynccontextmanager
 from collections import defaultdict
 from . import api
 from .api import router as debug_router
+from .auth import verify_admin_key
 
 # ✅ RESTORED AGENT IMPORTS
 from .agents.market_sentiment_agent import MarketSentimentAgent
@@ -489,7 +490,7 @@ async def refresh_market_news(background_tasks: BackgroundTasks):
         logger.error(f"Error in refresh endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/market-news/force-refresh-summary")
+@app.post("/api/market-news/force-refresh-summary", dependencies=[Depends(verify_admin_key)])
 async def force_refresh_news_summary():
     """Force refresh news summary (non-blocking)"""
     try:
@@ -508,7 +509,7 @@ async def force_refresh_news_summary():
             "message": f"Failed to start news refresh: {str(e)}"
         }
 
-@app.post("/api/market-news/scheduled-cycle")
+@app.post("/api/market-news/scheduled-cycle", dependencies=[Depends(verify_admin_key)])
 async def trigger_scheduled_news_cycle():
     """Trigger the scheduled 3-hour news processing cycle"""
     try:
@@ -1142,7 +1143,7 @@ async def get_enhanced_fundamentals_data():
         logger.error(f"Error getting enhanced fundamentals data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/fundamentals/force-refresh")
+@app.post("/api/fundamentals/force-refresh", dependencies=[Depends(verify_admin_key)])
 async def force_refresh_fundamentals():
     """Force refresh economic fundamentals (non-blocking)"""
     try:
@@ -1696,7 +1697,7 @@ async def run_market_sentiment_agent():
             "timestamp": datetime.utcnow().isoformat()
         }
 
-@app.post("/api/market-sentiment/force-refresh")
+@app.post("/api/market-sentiment/force-refresh", dependencies=[Depends(verify_admin_key)])
 async def force_refresh_market_sentiment():
     """Force refresh market sentiment analysis (bypass duplicate prevention)"""
     try:
@@ -1855,7 +1856,7 @@ async def get_market_sentiment_agent_status():
         logger.error(f"Error getting market sentiment agent status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/stocks/batch-analyze")
+@app.post("/api/stocks/batch-analyze", dependencies=[Depends(verify_admin_key)])
 async def start_batch_analysis(background_tasks: BackgroundTasks, tickers: List[str] = None):
     """Start batch analysis of multiple stocks"""
     try:
@@ -1881,7 +1882,7 @@ async def start_batch_analysis(background_tasks: BackgroundTasks, tickers: List[
         return {'status': 'error', 'error': str(e)}
 
 
-@app.post("/api/stocks/batch-analyze-failed")
+@app.post("/api/stocks/batch-analyze-failed", dependencies=[Depends(verify_admin_key)])
 async def batch_analyze_failed_only(background_tasks: BackgroundTasks):
     """Re-analyze only stocks with incomplete/failed analyses"""
     try:
@@ -1919,7 +1920,7 @@ async def batch_analyze_failed_only(background_tasks: BackgroundTasks):
         return {'status': 'error', 'error': str(e)}
 
 
-@app.post("/api/stocks/populate-sectors")
+@app.post("/api/stocks/populate-sectors", dependencies=[Depends(verify_admin_key)])
 async def populate_stock_sectors():
     """Populate sector data for all S&P 500 stocks"""
     try:
@@ -1935,7 +1936,7 @@ async def populate_stock_sectors():
         return {'status': 'error', 'error': str(e)}
 
 
-@app.get("/api/stocks/batch-status/{job_id}")
+@app.get("/api/stocks/batch-status/{job_id}", dependencies=[Depends(verify_admin_key)])
 async def get_batch_status(job_id: str):
     """Get status of a batch analysis job"""
     try:
@@ -2085,7 +2086,7 @@ async def get_urgent_sells_by_sector(sector: str, limit: int = 5):
         return {'error': str(e)}
 
 
-@app.post("/api/stocks/scan-opportunities")
+@app.post("/api/stocks/scan-opportunities", dependencies=[Depends(verify_admin_key)])
 async def trigger_opportunity_scan(background_tasks: BackgroundTasks):
     """Manually trigger opportunity scan"""
     try:
@@ -2104,7 +2105,7 @@ async def trigger_opportunity_scan(background_tasks: BackgroundTasks):
         return {'status': 'error', 'error': str(e)}
 
 
-@app.get("/api/stocks/recent-completions")
+@app.get("/api/stocks/recent-completions", dependencies=[Depends(verify_admin_key)])
 async def get_recent_completions(limit: int = 10):
     """Get recently completed stock analyses"""
     try:
@@ -2128,7 +2129,7 @@ async def get_recent_completions(limit: int = 10):
         return {'status': 'error', 'error': str(e)}
 
 
-@app.get("/api/stocks/failed-analyses")
+@app.get("/api/stocks/failed-analyses", dependencies=[Depends(verify_admin_key)])
 async def get_failed_analyses():
     """Get all stocks with incomplete or failed analyses"""
     try:
@@ -2148,7 +2149,7 @@ async def get_failed_analyses():
         return {'status': 'error', 'error': str(e)}
 
 
-@app.get("/api/stocks/current-batch")
+@app.get("/api/stocks/current-batch", dependencies=[Depends(verify_admin_key)])
 async def get_current_batch():
     """Get the currently running batch (or most recent batch)"""
     try:
