@@ -1146,12 +1146,17 @@ async def get_enhanced_fundamentals_data():
 
 @app.post("/api/fundamentals/force-refresh", dependencies=[Depends(verify_admin_key)])
 async def force_refresh_fundamentals():
-    """Force refresh economic fundamentals (non-blocking)"""
+    """Force refresh economic fundamentals - collects data AND runs analysis (non-blocking)"""
     try:
         # Start background processing without waiting
         async def background_refresh():
             from .agents.economic_fundamentals_agent import EconomicFundamentalsAgent
-            logger.info("Force refreshing economic fundamentals analysis in background")
+            logger.info("Force refreshing economic fundamentals: collecting data + running analysis")
+            
+            # Step 1: Collect fresh economic data from APIs
+            await economic_fundamentals_collector.collect_latest_data()
+            
+            # Step 2: Run AI analysis on the collected data
             agent = EconomicFundamentalsAgent()
             await agent.run_cycle(force=True)
         
@@ -1159,7 +1164,7 @@ async def force_refresh_fundamentals():
         
         return {
             "status": "processing",
-            "message": "Fundamentals refresh started in background. Current analysis will remain visible while processing."
+            "message": "Fundamentals refresh started: collecting economic data and running AI analysis in background."
         }
         
     except Exception as e:
