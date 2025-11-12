@@ -35,7 +35,8 @@ from .models import (
 )
 
 # Create database tables
-Base.metadata.create_all(bind=engine)
+# Note: Tables are created via Alembic migrations, not automatically
+# Base.metadata.create_all(bind=engine)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
