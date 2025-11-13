@@ -155,15 +155,18 @@ Provide your analysis as a JSON object matching the specified format.
         
         return full_prompt
         
-    async def get_stock_fundamentals(self) -> Dict:
+    async def get_stock_fundamentals(self, force_refresh: bool = False) -> Dict:
         """Get fundamental data for this stock (with 24h caching)"""
-        # Check cache first
-        if self.ticker in self._fundamentals_cache:
+        # Check cache first (unless force_refresh)
+        if not force_refresh and self.ticker in self._fundamentals_cache:
             cached = self._fundamentals_cache[self.ticker]
             age_hours = (datetime.utcnow() - cached['timestamp']).total_seconds() / 3600
             if age_hours < self._cache_ttl_hours:
                 logger.debug(f"[{self.ticker}] Using cached fundamentals ({age_hours:.1f}h old)")
                 return cached['data']
+        
+        if force_refresh:
+            logger.info(f"[{self.ticker}] Force refreshing fundamentals (bypassing cache)")
         
         try:
             logger.debug(f"[{self.ticker}] Fetching fresh fundamentals from yfinance")

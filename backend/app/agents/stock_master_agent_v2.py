@@ -132,6 +132,11 @@ IMPORTANT: Write risk_factors and catalysts as clean, readable sentences. DO NOT
         try:
             logger.info(f"[{self.agent_id}] Starting master analysis for {self.ticker}")
             
+            # Clear cached fundamentals to force fresh calculation
+            if self.ticker in BaseStockAgent._fundamentals_cache:
+                del BaseStockAgent._fundamentals_cache[self.ticker]
+                logger.info(f"[{self.agent_id}] Cleared cached fundamentals for {self.ticker}")
+            
             # Trigger sub-agents to generate fresh analysis
             await self._trigger_sub_agents()
             
