@@ -206,12 +206,8 @@ class BatchAnalysisService:
         """
         db = SessionLocal()
         try:
-            # Check if we have any stocks loaded
-            count = db.query(SP500Stock).count()
-            
-            if count == 0:
-                # Russell 1000 style list: S&P 500 + mid/large-cap growth stocks
-                sp500_tickers = [
+            # Russell 1000 style list: S&P 500 + mid/large-cap growth stocks
+            all_target_tickers = [
                     'A', 'AAL', 'AAPL', 'ABBV', 'ABC', 'ABMD', 'ABT', 'ACN', 'ADBE', 'ADI',
                     'ADM', 'ADP', 'ADSK', 'AEE', 'AEP', 'AES', 'AFL', 'AIG', 'AIZ', 'AJG',
                     'AKAM', 'ALB', 'ALGN', 'ALK', 'ALL', 'ALLE', 'AMAT', 'AMCR', 'AMD', 'AME',
@@ -301,16 +297,28 @@ class BatchAnalysisService:
                     'VOYA', 'VRE', 'VST', 'WDAY', 'WEN', 'WEX', 'WHR', 'WING', 'WK', 'WLK',
                     'WNC', 'WPX', 'WRE', 'WRI', 'WSC', 'WSM', 'WSO', 'WWE', 'WWW', 'X',
                     'XPO', 'YETI', 'Z', 'ZEN', 'ZG', 'ZI', 'ZNGA', 'ZM', 'ZS', 'ZUO'
-                ]
+            ]
+            
+            # Get existing tickers from database
+            existing_stocks = db.query(SP500Stock).all()
+            existing_tickers = {stock.ticker for stock in existing_stocks}
+            
+            # Find new tickers to add
+            new_tickers = [t for t in all_target_tickers if t not in existing_tickers]
+            
+            if new_tickers:
+                logger.info(f"Adding {len(new_tickers)} new tickers to database: {new_tickers[:20]}{'...' if len(new_tickers) > 20 else ''}")
                 
-                for ticker in sp500_tickers:
+                for ticker in new_tickers:
                     sp_stock = SP500Stock(ticker=ticker, analysis_status='pending')
                     db.add(sp_stock)
                 
                 db.commit()
-                logger.info(f"Initialized large-cap US stock list with {len(sp500_tickers)} tickers (Russell 1000 style)")
-                
-            # Return existing tickers
+                logger.info(f"✅ Added {len(new_tickers)} new tickers (Total universe: {len(existing_tickers) + len(new_tickers)})")
+            else:
+                logger.info(f"Stock universe already complete with {len(existing_tickers)} tickers")
+            
+            # Return all active tickers
             stocks = db.query(SP500Stock).filter(SP500Stock.is_active == True).all()
             all_tickers = [stock.ticker for stock in stocks]
             
