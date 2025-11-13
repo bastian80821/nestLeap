@@ -67,6 +67,9 @@ Provide specific insights about how news events are likely to affect market dire
         try:
             logger.info(f"[{self.agent_id}] Starting market news analysis")
             
+            # Get historical context from past summaries (for narrative continuity)
+            historical_context = await self._get_historical_context()
+            
             # Collect news data
             news_data = await self._collect_market_news_data()
             
@@ -74,13 +77,27 @@ Provide specific insights about how news events are likely to affect market dire
                 logger.warning(f"[{self.agent_id}] Insufficient news data")
                 return
             
+            # Add historical context to news data
+            news_data['historical_context'] = historical_context
+            
             # Analyze news with context
-            news_analysis = await self.analyze_with_context(
-                news_data,
+            task_description = (
                 "Analyze the market impact of recent news events. "
                 "Identify significant developments, assess sector impacts, and determine overall market implications. "
-                "Focus on events that could move markets or change sentiment."
+                "Focus on events that could move markets or change sentiment. "
             )
+            
+            # Include historical context in task if available
+            if historical_context and historical_context.get('historical_context'):
+                task_description += (
+                    f"\n\nHISTORICAL CONTEXT (past {historical_context.get('context_timeframe', '7 days')}):\n"
+                    f"{historical_context['historical_context']}\n"
+                    f"Persistent themes: {', '.join(historical_context.get('persistent_themes', []))}\n"
+                    f"Sentiment trend: {historical_context.get('sentiment_trend', 'unknown')}\n\n"
+                    f"Provide fresh insights and avoid repeating themes that have already been covered extensively."
+                )
+            
+            news_analysis = await self.analyze_with_context(news_data, task_description)
             
             # Store news analysis findings
             await self._store_news_analysis(news_data, news_analysis)
@@ -89,6 +106,30 @@ Provide specific insights about how news events are likely to affect market dire
             
         except Exception as e:
             logger.error(f"[{self.agent_id}] Error in news analysis cycle: {e}")
+    
+    async def _get_historical_context(self, days_back: int = 7) -> Dict:
+        """Get historical context from past news summaries"""
+        try:
+            from .news_history_agent import NewsHistoryAgent
+            
+            logger.info(f"[{self.agent_id}] Fetching historical context from past {days_back} days")
+            
+            # Create history agent instance
+            history_agent = NewsHistoryAgent()
+            
+            # Generate historical context
+            context = await history_agent.generate_historical_context(days_back)
+            
+            if context and 'error' not in context:
+                logger.info(f"[{self.agent_id}] Historical context: {context.get('historical_context', '')[:80]}...")
+                return context
+            else:
+                logger.warning(f"[{self.agent_id}] Could not generate historical context")
+                return {}
+                
+        except Exception as e:
+            logger.error(f"[{self.agent_id}] Error getting historical context: {e}")
+            return {}
     
     async def _collect_market_news_data(self) -> Dict:
         """Collect and process market news data"""
