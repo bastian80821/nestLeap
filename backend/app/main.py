@@ -2095,32 +2095,33 @@ async def get_big_movers(limit: int = 10):
 
 @app.get("/api/stocks/opportunities/sectors")
 async def get_sectors():
-    """Get list of sectors with stock counts (includes virtual 'Megacap' sector for companies > $500B)"""
+    """Get list of sectors with stock counts (minimum $50B market cap, includes virtual 'Megacap' sector for > $500B)"""
     try:
-        from .models import StockOpportunity, StockAnalysis
+        from .models import SP500Stock, StockAnalysis
         from sqlalchemy import func
         
         db = SessionLocal()
         try:
-            # Get regular sectors
+            # Get regular sectors - count stocks with market cap >= $50B
             sectors = db.query(
-                StockOpportunity.sector,
-                func.count(StockOpportunity.ticker).label('stock_count')
+                SP500Stock.sector,
+                func.count(SP500Stock.ticker).label('stock_count')
+            ).join(
+                StockAnalysis,
+                SP500Stock.ticker == StockAnalysis.ticker
             ).filter(
-                StockOpportunity.sector != None
+                SP500Stock.sector != None,
+                StockAnalysis.market_cap >= 50_000_000_000  # Minimum $50B
             ).group_by(
-                StockOpportunity.sector
+                SP500Stock.sector
             ).order_by(
-                func.count(StockOpportunity.ticker).desc()
+                func.count(SP500Stock.ticker).desc()
             ).all()
             
             sector_list = [{'name': s.sector, 'count': s.stock_count} for s in sectors]
             
             # Add virtual "Megacap" sector by counting stocks with market cap > $500B
-            megacap_count = db.query(func.count(StockOpportunity.ticker)).join(
-                StockAnalysis,
-                StockOpportunity.ticker == StockAnalysis.ticker
-            ).filter(
+            megacap_count = db.query(func.count(StockAnalysis.ticker)).filter(
                 StockAnalysis.market_cap > 500_000_000_000
             ).scalar()
             

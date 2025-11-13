@@ -90,7 +90,7 @@ class OpportunityScanner:
             db.close()
     
     async def _scan_single_stock(self, ticker: str, db) -> StockOpportunity:
-        """Scan a single stock for opportunities"""
+        """Scan a single stock for opportunities (minimum $50B market cap)"""
         
         # Get stock info (sector, company name)
         sp_stock = db.query(SP500Stock).filter(SP500Stock.ticker == ticker).first()
@@ -104,6 +104,11 @@ class OpportunityScanner:
         
         if not latest_analysis:
             logger.debug(f"{ticker}: No analysis found, skipping")
+            return None
+        
+        # Skip stocks with market cap < $50B
+        if latest_analysis.market_cap and latest_analysis.market_cap < 50_000_000_000:
+            logger.debug(f"{ticker}: Market cap ${latest_analysis.market_cap/1e9:.1f}B below $50B threshold, skipping")
             return None
         
         # Get averaged buy/sell thresholds

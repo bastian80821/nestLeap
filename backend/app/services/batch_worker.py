@@ -96,12 +96,24 @@ async def _process_batch_async(job_id: str, tickers: List[str], max_concurrent: 
 
 
 async def _analyze_single_stock(job_id: str, ticker: str) -> bool:
-    """Analyze a single stock - same logic as before"""
+    """Analyze a single stock - only stocks with market cap >= $50B"""
     from ..database import SessionLocal
     from ..models import SP500Stock
     from ..agents.stock_master_agent_v2 import StockMasterAgentV2
+    import yfinance as yf
     
     try:
+        # Quick market cap check first - skip small caps
+        try:
+            stock = yf.Ticker(ticker)
+            info = stock.info
+            market_cap = info.get('marketCap')
+            if market_cap and market_cap < 50_000_000_000:
+                logger.info(f"[{job_id}] ⏭️  {ticker} market cap ${market_cap/1e9:.1f}B below $50B threshold, skipping")
+                return True  # Count as success, just filtered out
+        except Exception as e:
+            logger.warning(f"[{job_id}] {ticker}: Could not check market cap, will attempt analysis anyway: {e}")
+        
         # Check if stock was recently analyzed (within 6 hours)
         db = SessionLocal()
         try:
