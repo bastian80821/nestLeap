@@ -213,9 +213,14 @@ const Dashboards: React.FC = () => {
         if (firstSector) {
           fetchOpportunities(firstSector);
         }
+      } else {
+        // No sectors available - fetch ALL opportunities globally
+        fetchOpportunities();
       }
     } catch (err) {
       console.error('Error fetching sectors:', err);
+      // On error, still try to fetch global opportunities
+      fetchOpportunities();
     }
   };
 

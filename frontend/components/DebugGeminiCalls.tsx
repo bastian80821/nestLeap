@@ -596,6 +596,34 @@ const DebugGeminiCalls: React.FC = () => {
               </>
             )}
           </button>
+          
+          <button
+            onClick={async () => {
+              setRefreshing(prev => ({ ...prev, sectors: true }));
+              try {
+                const data = await adminPost('/api/stocks/populate-sectors');
+                alert(data.status === 'success' ? 'Sectors populated! Re-scan opportunities now.' : `Error: ${data.error}`);
+              } catch (err) {
+                alert('Failed to populate sectors');
+              } finally {
+                setRefreshing(prev => ({ ...prev, sectors: false }));
+              }
+            }}
+            disabled={refreshing['sectors']}
+            className="flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
+          >
+            {refreshing['sectors'] ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                Populating...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-4 h-4" />
+                Populate Sectors
+              </>
+            )}
+          </button>
         </div>
       </div>
       
