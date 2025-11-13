@@ -178,8 +178,8 @@ Provide your analysis as a JSON object matching the specified format.
             latest_quarter_label = None
             
             try:
-                # Get QUARTERLY financials for most recent YoY growth
-                quarterly = stock.quarterly_financials
+                # Get quarterly income statement (has Normalized Income for non-GAAP earnings)
+                quarterly = stock.quarterly_income_stmt
                 if not quarterly.empty and len(quarterly.columns) >= 5:
                     # Get quarter date
                     latest_quarter_date = quarterly.columns[0].strftime('%Y-%m-%d')
@@ -197,25 +197,32 @@ Provide your analysis as a JSON object matching the specified format.
                     
                     # Compare latest quarter (Q0) to same quarter last year (Q4, i.e., 4 quarters ago)
                     
-                    # Calculate earnings growth from Net Income
-                    if 'Net Income' in quarterly.index:
-                        latest_earnings = quarterly.loc['Net Income'].iloc[0]
-                        yoy_earnings = quarterly.loc['Net Income'].iloc[4]  # 4 quarters ago
-                        if yoy_earnings != 0:
-                            calculated_earnings_growth = ((latest_earnings - yoy_earnings) / abs(yoy_earnings)) * 100
+                    # Calculate earnings growth from Diluted EPS (GAAP)
+                    yoy_eps = None  # Track for LLM context
+                    
+                    if 'Diluted EPS' in quarterly.index:
+                        latest_eps = quarterly.loc['Diluted EPS'].iloc[0]
+                        yoy_eps = quarterly.loc['Diluted EPS'].iloc[4]  # 4 quarters ago
+                        
+                        if yoy_eps != 0 and not (latest_eps == 0 and yoy_eps == 0):
+                            if yoy_eps > 0:
+                                # Normal case: both profitable
+                                calculated_earnings_growth = ((latest_eps - yoy_eps) / yoy_eps) * 100
+                            else:
+                                # Previous quarter was a LOSS - show as "Recovering from Loss"
+                                # Don't calculate misleading growth %, but LLM gets actual numbers
+                                calculated_earnings_growth = None
+                                logger.info(f"[{self.ticker}] Recovering from loss: YoY EPS ${yoy_eps:.2f} → ${latest_eps:.2f}")
                     
                     # Calculate revenue growth from Total Revenue
                     if 'Total Revenue' in quarterly.index:
                         latest_revenue = quarterly.loc['Total Revenue'].iloc[0]
                         yoy_revenue = quarterly.loc['Total Revenue'].iloc[4]  # 4 quarters ago
                         if yoy_revenue != 0:
-                            calculated_revenue_growth = ((latest_revenue - yoy_revenue) / abs(yoy_revenue)) * 100
+                            calculated_revenue_growth = ((latest_revenue - yoy_revenue) / yoy_revenue) * 100
                     
-                    # Get EPS
-                    if 'Diluted EPS' in quarterly.index:
-                        latest_eps = quarterly.loc['Diluted EPS'].iloc[0]
-                    
-                    logger.info(f"[{self.ticker}] {latest_quarter_label} {latest_quarter_date} - Rev Growth: {calculated_revenue_growth:.1f}%, Earnings Growth: {calculated_earnings_growth:.1f}%, EPS: ${latest_eps}")
+                    earnings_str = f"{calculated_earnings_growth:.1f}%" if calculated_earnings_growth is not None else "N/A (Recovering from Loss)"
+                    logger.info(f"[{self.ticker}] {latest_quarter_label} {latest_quarter_date} - Rev Growth: {calculated_revenue_growth:.1f}%, Earnings Growth: {earnings_str}, EPS: ${latest_eps}")
             except Exception as e:
                 logger.warning(f"Could not calculate quarterly growth: {e}")
             
@@ -270,11 +277,13 @@ Provide your analysis as a JSON object matching the specified format.
                 
                 # Growth metrics - CALCULATED from quarterly financials (already as percentages like 9.6, 9.3)
                 'revenue_growth': calculated_revenue_growth,
-                'earnings_growth': calculated_earnings_growth,
+                'earnings_growth': calculated_earnings_growth,  # None if recovering from loss
                 'latest_eps': latest_eps,
+                'yoy_eps': yoy_eps,  # For LLM context when recovering from loss
                 'latest_quarter_date': latest_quarter_date,
                 'latest_quarter_label': latest_quarter_label,
                 'earnings_quarterly_growth': info.get('earningsQuarterlyGrowth'),
+                'recovering_from_loss': (yoy_eps is not None and yoy_eps < 0 and calculated_earnings_growth is None),
                 
                 # Financial health
                 'total_cash': info.get('totalCash'),
