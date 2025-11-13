@@ -34,24 +34,24 @@ IMPORTANT TEMPORAL CONTEXT:
 - When discussing "recent" or "latest" earnings, use the 'latest_quarter_label' provided
 
 Your role is to:
-1. Analyze {ticker}'s financial health and valuation metrics
-2. Assess growth prospects and profitability trends
+1. Analyze {ticker}'s financial health and valuation metrics (PROVIDED in the data)
+2. Assess growth prospects and profitability trends (revenue/earnings growth rates are ALREADY CALCULATED - don't recalculate)
 3. Compare {ticker} to industry peers and market averages
 4. Evaluate competitive position and business model strength
 5. Consider macroeconomic impact on {ticker}'s fundamentals
 
 Focus on:
 - Valuation metrics (P/E, P/B, P/S, PEG ratio, EV/EBITDA)
-- Growth metrics (revenue, earnings, free cash flow growth)
+- Growth trends (revenue_growth and earnings_growth are provided - analyze trends, don't calculate)
 - Profitability (margins, ROE, ROA, ROIC)
 - Financial health (debt levels, liquidity, cash flow)
 - Competitive position and market share trends
 - Economic sensitivity and cycle positioning
 
+IMPORTANT: DO NOT calculate revenue_growth or earnings_growth - these are provided in the data and calculated correctly elsewhere.
+
 Output Format (JSON):
 {{
-    "revenue_growth": float (YoY percentage),
-    "earnings_growth": float (YoY percentage),
     "profit_margins": float (net margin percentage),
     "debt_to_equity": float,
     "return_on_equity": float,
@@ -200,8 +200,8 @@ Be specific about {ticker} and provide actionable fundamental insights.
                 analysis_date=datetime.utcnow(),
                 
                 # Financial Health
-                revenue_growth=analysis.get('revenue_growth', fundamentals.get('revenue_growth')),
-                earnings_growth=analysis.get('earnings_growth', fundamentals.get('earnings_growth')),
+                revenue_growth=fundamentals.get('revenue_growth'),  # ALWAYS use our calculation, not LLM's
+                earnings_growth=fundamentals.get('earnings_growth'),  # ALWAYS use our calculation, not LLM's (handles loss-to-profit correctly)
                 profit_margins=analysis.get('profit_margins', fundamentals.get('profit_margins')),
                 debt_to_equity=analysis.get('debt_to_equity', fundamentals.get('debt_to_equity')),
                 return_on_equity=analysis.get('return_on_equity', fundamentals.get('return_on_equity')),
