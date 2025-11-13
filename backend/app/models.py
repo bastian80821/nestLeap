@@ -513,7 +513,7 @@ class StockAnalysis(Base):
     
     # 🧠 MASTER AGENT SYNTHESIS
     overall_rating = Column(String(20))  # 'Strong Buy', 'Buy', 'Hold', 'Sell', 'Strong Sell'
-    confidence_score = Column(Float, nullable=False)  # 0-1
+    confidence_score = Column(Float)  # 0-1 (nullable since LLM may not always provide it)
     target_price = Column(Float)
     upside_potential = Column(Float)  # Percentage upside to target
     
