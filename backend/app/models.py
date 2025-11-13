@@ -852,7 +852,7 @@ class StockTechnicalAnalysis(Base):
     volume_confirmation = Column(Boolean)  # Does volume confirm price trend?
     
     # Pattern Recognition
-    chart_pattern = Column(String(50))  # e.g., 'Head and Shoulders', 'Double Bottom'
+    chart_pattern = Column(Text)  # Pattern description (can be long)
     pattern_reliability = Column(Float)  # 0-1
     pattern_target = Column(Float)  # Projected price target from pattern
     

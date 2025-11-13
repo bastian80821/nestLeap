@@ -35,19 +35,34 @@ from .models import (
 )
 
 # Create database tables automatically (for fresh Railway deployment)
-# Fix for stock_analysis.confidence_score NOT NULL constraint
+# Database fixes for column constraints
 try:
     from sqlalchemy import text
     with engine.connect() as conn:
-        # Check if constraint exists and remove it
-        conn.execute(text("""
-            ALTER TABLE stock_analysis 
-            ALTER COLUMN confidence_score DROP NOT NULL;
-        """))
-        conn.commit()
-        logger.info("✅ Fixed stock_analysis.confidence_score constraint")
+        # Fix 1: Make confidence_score nullable
+        try:
+            conn.execute(text("""
+                ALTER TABLE stock_analysis 
+                ALTER COLUMN confidence_score DROP NOT NULL;
+            """))
+            conn.commit()
+            logger.info("✅ Fixed stock_analysis.confidence_score constraint")
+        except Exception as e:
+            logger.debug(f"confidence_score fix: {e}")
+        
+        # Fix 2: Change chart_pattern from VARCHAR(50) to TEXT
+        try:
+            conn.execute(text("""
+                ALTER TABLE stock_technical_analysis 
+                ALTER COLUMN chart_pattern TYPE TEXT;
+            """))
+            conn.commit()
+            logger.info("✅ Fixed stock_technical_analysis.chart_pattern column type")
+        except Exception as e:
+            logger.debug(f"chart_pattern fix: {e}")
+            
 except Exception as e:
-    logger.info(f"Constraint fix not needed or already applied: {e}")
+    logger.info(f"Database fixes: {e}")
 
 Base.metadata.create_all(bind=engine)
 
