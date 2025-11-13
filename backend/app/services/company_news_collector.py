@@ -359,9 +359,18 @@ Respond ONLY with valid JSON."""
                 info = ticker_obj.info
                 company_name = info.get('longName', self.ticker)
                 sector = info.get('sector', 'Unknown')
+                market_cap = info.get('marketCap', 0)
+                # Format market cap for context
+                if market_cap > 1e12:
+                    market_cap_str = f"${market_cap / 1e12:.2f} trillion"
+                elif market_cap > 1e9:
+                    market_cap_str = f"${market_cap / 1e9:.1f} billion"
+                else:
+                    market_cap_str = f"${market_cap / 1e6:.0f} million"
             except:
                 company_name = self.ticker
                 sector = 'Unknown'
+                market_cap_str = "Unknown"
             
             # Build context for LLM
             articles_context = "\n\n".join([
@@ -375,6 +384,12 @@ Respond ONLY with valid JSON."""
             ][:3])  # Last 3 earnings
             
             prompt = f"""Generate a comprehensive company profile for {self.ticker} ({company_name}) based on recent news analysis.
+
+⚠️ CRITICAL CONTEXT - CURRENT COMPANY FACTS (as of today):
+- Current Market Cap: {market_cap_str}
+- DO NOT make statements about reaching market caps BELOW the current value
+- DO NOT cite very old news (>1 year) as "recent"
+- If an article mentions a milestone the company has already passed, IGNORE it or clarify it's historical
 
 RECENT ARTICLES (last 30 days):
 {articles_context}
