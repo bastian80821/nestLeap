@@ -608,9 +608,8 @@ IMPORTANT: Write risk_factors and catalysts as clean, readable sentences. DO NOT
                     # Quarter Information - from fresh fundamentals
                     'latest_quarter_date': fresh_fundamentals.get('latest_quarter_date'),
                     'latest_quarter_label': fresh_fundamentals.get('latest_quarter_label'),
-                    'latest_eps': fresh_fundamentals.get('latest_eps'),
-                    'latest_ttm_eps': fresh_fundamentals.get('latest_ttm_eps'),  # TTM EPS
-                    'prior_ttm_eps': fresh_fundamentals.get('prior_ttm_eps'),  # Prior TTM EPS
+                    'latest_eps': fresh_fundamentals.get('latest_eps'),  # Latest quarter EPS (for seasonality)
+                    'latest_ttm_eps': fresh_fundamentals.get('latest_ttm_eps'),  # TTM EPS (smoothed)
                 }
                 
                 # Add comprehensive news analysis if available
