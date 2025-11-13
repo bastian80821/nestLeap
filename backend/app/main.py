@@ -1408,6 +1408,52 @@ async def get_stock_analysis(ticker: str):
         return {'error': str(e), 'ticker': ticker, 'has_analysis': False}
 
 
+@app.delete("/api/stock/{ticker}/clear-news-cache")
+async def clear_stock_news_cache(ticker: str):
+    """Clear cached news analysis for a stock to force regeneration"""
+    try:
+        ticker = ticker.upper()
+        from .models import StockNewsAnalysis, CompanyNewsSummary, StockArticle
+        
+        db = SessionLocal()
+        try:
+            # Clear news analysis
+            deleted_news = db.query(StockNewsAnalysis).filter(
+                StockNewsAnalysis.ticker == ticker
+            ).delete()
+            
+            # Clear company summary
+            deleted_summary = db.query(CompanyNewsSummary).filter(
+                CompanyNewsSummary.ticker == ticker
+            ).delete()
+            
+            # Reset article processing flags
+            reset_articles = db.query(StockArticle).filter(
+                StockArticle.ticker == ticker
+            ).update({'was_used_in_summary_update': False})
+            
+            db.commit()
+            
+            logger.info(f"Cleared news cache for {ticker}: {deleted_news} news, {deleted_summary} summaries, {reset_articles} articles reset")
+            
+            return {
+                'status': 'success',
+                'message': f'News cache cleared for {ticker}',
+                'ticker': ticker,
+                'deleted': {
+                    'news_analysis': deleted_news,
+                    'company_summaries': deleted_summary,
+                    'articles_reset': reset_articles
+                }
+            }
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Error clearing news cache for {ticker}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/stock/{ticker}/analyze")
 async def trigger_stock_analysis(ticker: str, background_tasks: BackgroundTasks):
     """Trigger comprehensive stock analysis for a ticker (V2)"""
