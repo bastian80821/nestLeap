@@ -187,7 +187,17 @@ Provide your analysis as a JSON object matching the specified format.
             calculated_peg_ratio = None
             
             try:
-                # Get quarterly income statement - has actual fiscal quarter end dates AND latest EPS
+                # ============================================================
+                # GET TTM EPS DIRECTLY FROM YFINANCE (always available)
+                # ============================================================
+                # Get Latest TTM EPS from yfinance (already split-adjusted and up to date)
+                latest_ttm_eps = info.get('trailingEps')
+                if latest_ttm_eps:
+                    logger.info(f"[{self.ticker}] Latest TTM EPS (yfinance): ${latest_ttm_eps:.2f} (split-adjusted)")
+                else:
+                    logger.warning(f"[{self.ticker}] No trailingEps available from yfinance")
+                
+                # Get quarterly income statement - for quarter date and growth calculation
                 quarterly = stock.quarterly_income_stmt
                 
                 # Get earnings_dates for extended historical data (8+ quarters)
@@ -214,18 +224,9 @@ Provide your analysis as a JSON object matching the specified format.
                     logger.info(f"[{self.ticker}] Latest quarter ended: {latest_quarter_date} (internal label: {latest_quarter_label})")
                     
                     # ============================================================
-                    # TTM EPS CALCULATION (using yfinance's split-adjusted data)
+                    # CALCULATE GROWTH RATES using quarterly data
                     # ============================================================
-                    latest_eps = None
-                    latest_ttm_eps = None
-                    prior_ttm_eps = None
-                    
-                    # Get Latest TTM EPS from yfinance (already split-adjusted and up to date)
-                    latest_ttm_eps = info.get('trailingEps')
-                    if latest_ttm_eps:
-                        logger.info(f"[{self.ticker}] Latest TTM EPS (yfinance): ${latest_ttm_eps:.2f} (split-adjusted)")
-                    
-                    # Get quarterly EPS data for Prior TTM calculation
+                    # Get quarterly EPS data for growth calculation
                     if 'Diluted EPS' in quarterly.index:
                         eps_data_quarterly = quarterly.loc['Diluted EPS']
                         latest_eps = eps_data_quarterly.iloc[0]  # Most recent quarter
@@ -311,8 +312,6 @@ Provide your analysis as a JSON object matching the specified format.
             # - Latest TTM EPS (from yfinance's trailingEps - split-adjusted)
             # - TTM Earnings Growth Rate (our calculated YoY growth)
             # Formula: Forward PE = Current Price / (TTM EPS × (1 + Growth Rate))
-            calculated_forward_pe = None
-            calculated_trailing_pe = None
             try:
                 # Use yfinance's TTM EPS (split-adjusted and up to date)
                 trailing_eps = latest_ttm_eps if latest_ttm_eps is not None else info.get('trailingEps')
@@ -339,7 +338,6 @@ Provide your analysis as a JSON object matching the specified format.
             # PEG Ratio = PE / Growth Rate (measures if PE is justified by growth)
             # - Use Trailing PE (from our TTM EPS)
             # - Use TTM Earnings Growth Rate
-            calculated_peg_ratio = None
             try:
                 # Use our calculated trailing PE (more accurate than yfinance)
                 trailing_pe = calculated_trailing_pe if calculated_trailing_pe is not None else info.get('trailingPE')
