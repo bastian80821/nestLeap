@@ -204,29 +204,39 @@ Provide your analysis as a JSON object matching the specified format.
                     
                     # Compare latest quarter (Q0) to same quarter last year (Q4, i.e., 4 quarters ago)
                     
-                    # Calculate earnings growth from Diluted EPS (GAAP)
+                    # Calculate earnings growth using Trailing 12-Month (TTM) EPS to smooth volatility
+                    # TTM avoids distortion from one-time charges or seasonal effects in single quarters
                     yoy_eps = None  # Track for LLM context
                     
-                    if 'Diluted EPS' in quarterly.index:
-                        latest_eps = quarterly.loc['Diluted EPS'].iloc[0]
-                        yoy_eps = quarterly.loc['Diluted EPS'].iloc[4]  # 4 quarters ago
+                    if 'Diluted EPS' in quarterly.index and len(quarterly.loc['Diluted EPS']) >= 8:
+                        # Calculate TTM EPS (sum of last 4 quarters)
+                        latest_ttm_eps = quarterly.loc['Diluted EPS'].iloc[0:4].sum()
+                        # Calculate prior TTM EPS (sum of quarters 4-7, i.e., 1 year ago)
+                        prior_ttm_eps = quarterly.loc['Diluted EPS'].iloc[4:8].sum()
                         
-                        if yoy_eps != 0 and not (latest_eps == 0 and yoy_eps == 0):
-                            if yoy_eps > 0:
-                                # Normal case: both profitable
-                                calculated_earnings_growth = ((latest_eps - yoy_eps) / yoy_eps) * 100
+                        # For display/logging, show most recent quarter EPS
+                        latest_eps = quarterly.loc['Diluted EPS'].iloc[0]
+                        yoy_eps = quarterly.loc['Diluted EPS'].iloc[4]
+                        
+                        if prior_ttm_eps != 0 and not (latest_ttm_eps == 0 and prior_ttm_eps == 0):
+                            if prior_ttm_eps > 0:
+                                # Normal case: both profitable on TTM basis
+                                calculated_earnings_growth = ((latest_ttm_eps - prior_ttm_eps) / prior_ttm_eps) * 100
+                                logger.info(f"[{self.ticker}] TTM EPS: Latest ${latest_ttm_eps:.2f}, Prior ${prior_ttm_eps:.2f}, Growth {calculated_earnings_growth:.1f}%")
                             else:
-                                # Previous quarter was a LOSS - show as "Recovering from Loss"
-                                # Don't calculate misleading growth %, but LLM gets actual numbers
+                                # Prior TTM was a LOSS - show as "Recovering from Loss"
                                 calculated_earnings_growth = None
-                                logger.info(f"[{self.ticker}] Recovering from loss: YoY EPS ${yoy_eps:.2f} → ${latest_eps:.2f}")
+                                logger.info(f"[{self.ticker}] Recovering from loss: TTM EPS ${prior_ttm_eps:.2f} → ${latest_ttm_eps:.2f}")
                     
-                    # Calculate revenue growth from Total Revenue
-                    if 'Total Revenue' in quarterly.index:
-                        latest_revenue = quarterly.loc['Total Revenue'].iloc[0]
-                        yoy_revenue = quarterly.loc['Total Revenue'].iloc[4]  # 4 quarters ago
-                        if yoy_revenue != 0:
-                            calculated_revenue_growth = ((latest_revenue - yoy_revenue) / yoy_revenue) * 100
+                    # Calculate revenue growth using TTM (same as earnings, for consistency)
+                    if 'Total Revenue' in quarterly.index and len(quarterly.loc['Total Revenue']) >= 8:
+                        # TTM revenue (sum of last 4 quarters)
+                        latest_ttm_revenue = quarterly.loc['Total Revenue'].iloc[0:4].sum()
+                        # Prior TTM revenue (sum of quarters 4-7)
+                        prior_ttm_revenue = quarterly.loc['Total Revenue'].iloc[4:8].sum()
+                        if prior_ttm_revenue != 0:
+                            calculated_revenue_growth = ((latest_ttm_revenue - prior_ttm_revenue) / prior_ttm_revenue) * 100
+                            logger.info(f"[{self.ticker}] TTM Revenue: Latest ${latest_ttm_revenue/1e9:.2f}B, Prior ${prior_ttm_revenue/1e9:.2f}B, Growth {calculated_revenue_growth:.1f}%")
                     
                     earnings_str = f"{calculated_earnings_growth:.1f}%" if calculated_earnings_growth is not None else "N/A (Recovering from Loss)"
                     logger.info(f"[{self.ticker}] {latest_quarter_label} {latest_quarter_date} - Rev Growth: {calculated_revenue_growth:.1f}%, Earnings Growth: {earnings_str}, EPS: ${latest_eps}")
@@ -299,15 +309,17 @@ Provide your analysis as a JSON object matching the specified format.
                 'return_on_assets': (info.get('returnOnAssets') * 100) if info.get('returnOnAssets') else None,
                 'return_on_equity': (info.get('returnOnEquity') * 100) if info.get('returnOnEquity') else None,
                 
-                # Growth metrics - CALCULATED from quarterly financials (already as percentages like 9.6, 9.3)
-                'revenue_growth': calculated_revenue_growth,
-                'earnings_growth': calculated_earnings_growth,  # None if recovering from loss
-                'latest_eps': latest_eps,
-                'yoy_eps': yoy_eps,  # For LLM context when recovering from loss
+                # Growth metrics - CALCULATED using TTM (Trailing 12-Month) to smooth volatility
+                'revenue_growth': calculated_revenue_growth,  # TTM revenue growth
+                'earnings_growth': calculated_earnings_growth,  # TTM earnings growth, None if recovering from loss
+                'latest_eps': latest_eps,  # Most recent quarter EPS (for display)
+                'yoy_eps': yoy_eps,  # Single quarter YoY comparison (for context)
+                'latest_ttm_eps': latest_ttm_eps if 'latest_ttm_eps' in locals() else None,  # TTM EPS (sum of last 4 quarters)
+                'prior_ttm_eps': prior_ttm_eps if 'prior_ttm_eps' in locals() else None,  # Prior TTM EPS
                 'latest_quarter_date': latest_quarter_date,
                 'latest_quarter_label': latest_quarter_label,
                 'earnings_quarterly_growth': info.get('earningsQuarterlyGrowth'),
-                'recovering_from_loss': (yoy_eps is not None and yoy_eps < 0 and calculated_earnings_growth is None),
+                'recovering_from_loss': ('prior_ttm_eps' in locals() and prior_ttm_eps is not None and prior_ttm_eps < 0 and calculated_earnings_growth is None),
                 
                 # Financial health
                 'total_cash': info.get('totalCash'),
