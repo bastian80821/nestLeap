@@ -1457,7 +1457,7 @@ async def clear_stock_news_cache(ticker: str):
 
 @app.post("/api/stock/{ticker}/analyze")
 async def trigger_stock_analysis(ticker: str, background_tasks: BackgroundTasks):
-    """Trigger comprehensive stock analysis for a ticker (V2)"""
+    """Trigger comprehensive stock analysis for a ticker (V2) - minimum $50B market cap"""
     try:
         ticker = ticker.upper()
         
@@ -1474,6 +1474,18 @@ async def trigger_stock_analysis(ticker: str, background_tasks: BackgroundTasks)
                     'error': f'Invalid ticker symbol: {ticker}. Please check the symbol and try again.',
                     'ticker': ticker
                 }
+            
+            # Check market cap - enforce $50B minimum
+            market_cap = info.get('marketCap')
+            if market_cap and market_cap < 50_000_000_000:
+                return {
+                    'status': 'error',
+                    'error': f'{ticker} has a market cap of ${market_cap/1e9:.1f}B, below the $50B minimum threshold.',
+                    'ticker': ticker,
+                    'market_cap': market_cap,
+                    'market_cap_formatted': f'${market_cap/1e9:.1f}B'
+                }
+            
         except Exception as validation_error:
             logger.warning(f"Ticker validation failed for {ticker}: {validation_error}")
             return {
