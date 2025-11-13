@@ -89,11 +89,17 @@ async def lifespan(app: FastAPI):
     # Start the 3-hour news processing scheduler
     async def scheduled_news_processor():
         """Background task that runs news processing every 3 hours"""
-        # Run immediately on startup, then every 3 hours
+        # Run IMMEDIATELY on startup (forced), then every 3 hours (non-forced)
+        first_run = True
         while True:
             try:
-                logger.info("🕐 Running scheduled 3-hour news processing cycle...")
-                result = await market_news_service.scheduled_news_cycle(force=False)
+                if first_run:
+                    logger.info("🕐 Running FIRST news processing cycle (forced after startup)...")
+                    result = await market_news_service.scheduled_news_cycle(force=True)  # Force first run
+                    first_run = False
+                else:
+                    logger.info("🕐 Running scheduled 3-hour news processing cycle...")
+                    result = await market_news_service.scheduled_news_cycle(force=False)
                 logger.info(f"✅ Scheduled news cycle completed: {result}")
             except Exception as e:
                 logger.error(f"❌ Error in scheduled news processing: {e}")

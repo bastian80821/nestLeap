@@ -322,6 +322,10 @@ WEEKLY PATTERNS (Last 2 weeks):
                                 limited_timeseries[indicator] = series
                         limited_context['economic_timeseries'] = limited_timeseries
                     current_data_intelligent[key] = limited_context
+                elif key == 'recent_articles' and isinstance(value, list):
+                    # CRITICAL: Pass full article list to LLM (don't truncate!)
+                    # Each article should have title, summary, source, etc.
+                    current_data_intelligent[key] = value  # Full list, not truncated
                 else:
                     # Include other data with size limits
                     str_value = str(value)

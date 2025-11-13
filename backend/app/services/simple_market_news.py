@@ -129,7 +129,14 @@ class SimpleMarketNews:
             
             extended_hours = 48  # Look back further for comprehensive scan
             raw_articles = await self._fetch_raw_articles(extended_hours)
-            logger.info(f"Fetched {len(raw_articles)} raw articles from sources")
+            logger.info(f"✅ Fetched {len(raw_articles)} raw articles from sources")
+            
+            # DEBUG: Log the most recent article
+            if raw_articles:
+                most_recent = max(raw_articles, key=lambda x: x.get('published_at', datetime.min.replace(tzinfo=timezone.utc)))
+                logger.info(f"📰 Most recent article: {most_recent['title'][:60]}... published at {most_recent.get('published_at')}")
+            else:
+                logger.warning("⚠️ NO RAW ARTICLES FETCHED! News sources may be down or blocking requests.")
             
             # Process articles through LLM (limit to 15 for comprehensive but manageable processing)
             processed_articles = []
