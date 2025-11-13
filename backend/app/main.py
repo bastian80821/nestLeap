@@ -135,7 +135,7 @@ async def lifespan(app: FastAPI):
                 # Start full batch analysis
                 job_id = await batch_service.start_batch_analysis(tickers, initiated_by="weekly_scheduler")
                 logger.info(f"✅ Weekly batch analysis started: job_id={job_id}, stocks={len(tickers)}")
-                
+                                
                 # Note: The batch analysis runs in the background, we don't wait for it here
                 
             except Exception as e:
@@ -2286,6 +2286,66 @@ async def debug_opportunity_scan():
     except Exception as e:
         logger.error(f"Error in debug endpoint: {e}")
         return {'error': str(e)}
+
+
+@app.post("/api/debug/clear-stock-analyses", dependencies=[Depends(verify_admin_key)])
+async def clear_stock_analyses():
+    """Clear all stock analyses (keeps market news, sentiment, fundamentals)"""
+    try:
+        from .models import (
+            StockAnalysis, 
+            StockFundamentalsAnalysis, 
+            StockTechnicalAnalysis, 
+            StockOpportunity,
+            SP500Stock
+        )
+        
+        db = SessionLocal()
+        try:
+            # Count before deletion
+            stock_analysis_count = db.query(StockAnalysis).count()
+            fundamentals_count = db.query(StockFundamentalsAnalysis).count()
+            technical_count = db.query(StockTechnicalAnalysis).count()
+            opportunities_count = db.query(StockOpportunity).count()
+            
+            # Delete stock analyses (CASCADE will handle related records)
+            db.query(StockAnalysis).delete()
+            db.query(StockFundamentalsAnalysis).delete()
+            db.query(StockTechnicalAnalysis).delete()
+            db.query(StockOpportunity).delete()
+            
+            # Reset analysis status in SP500Stock table
+            db.query(SP500Stock).update({
+                'analysis_status': 'pending',
+                'last_analyzed_at': None
+            })
+            
+            db.commit()
+            
+            logger.info(f"✅ Cleared stock analyses: {stock_analysis_count} master, {fundamentals_count} fundamentals, {technical_count} technical, {opportunities_count} opportunities")
+            
+            return {
+                'status': 'success',
+                'message': 'Stock analyses cleared successfully',
+                'deleted': {
+                    'stock_analyses': stock_analysis_count,
+                    'fundamentals_analyses': fundamentals_count,
+                    'technical_analyses': technical_count,
+                    'opportunities': opportunities_count
+                },
+                'preserved': [
+                    'Market news articles',
+                    'Market news summaries',
+                    'Economic fundamentals',
+                    'Market sentiment',
+                    'S&P 500 stock list (with sectors)'
+                ]
+            }
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Error clearing stock analyses: {e}")
+        return {'status': 'error', 'error': str(e)}
 
 
 if __name__ == "__main__":

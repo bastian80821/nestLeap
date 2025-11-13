@@ -624,6 +624,35 @@ const DebugGeminiCalls: React.FC = () => {
               </>
             )}
           </button>
+          
+          <button
+            onClick={async () => {
+              if (!confirm('Clear all stock analyses? This will delete all analysis data but keep market news/sentiment. You will need to re-run batch analysis.')) return;
+              setRefreshing(prev => ({ ...prev, clear: true }));
+              try {
+                const data = await adminPost('/api/debug/clear-stock-analyses');
+                alert(data.status === 'success' ? `Cleared! ${data.deleted.stock_analyses} analyses deleted. Start fresh batch now.` : `Error: ${data.error}`);
+              } catch (err) {
+                alert('Failed to clear analyses');
+              } finally {
+                setRefreshing(prev => ({ ...prev, clear: false }));
+              }
+            }}
+            disabled={refreshing['clear']}
+            className="flex items-center justify-center gap-2 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+          >
+            {refreshing['clear'] ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                Clearing...
+              </>
+            ) : (
+              <>
+                <XCircle className="w-4 h-4" />
+                Clear All Analyses
+              </>
+            )}
+          </button>
         </div>
       </div>
       
