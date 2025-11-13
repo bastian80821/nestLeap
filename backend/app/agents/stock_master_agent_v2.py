@@ -167,8 +167,34 @@ IMPORTANT: Write risk_factors and catalysts as clean, readable sentences. DO NOT
             competitive_advantages = fundamentals_analysis.get('fundamental_strengths', [])
             fundamental_concerns = fundamentals_analysis.get('fundamental_concerns', [])
             
+            # Get current date and quarter for temporal context
+            from datetime import datetime
+            today = datetime.now()
+            current_date_str = today.strftime('%B %d, %Y')  # e.g., "November 13, 2024"
+            current_month = today.month
+            if current_month <= 3:
+                current_quarter = f"Q1 {today.year}"
+            elif current_month <= 6:
+                current_quarter = f"Q2 {today.year}"
+            elif current_month <= 9:
+                current_quarter = f"Q3 {today.year}"
+            else:
+                current_quarter = f"Q4 {today.year}"
+            
+            # Get latest reported quarter from fundamentals
+            latest_quarter_label = fundamentals_basic.get('latest_quarter_label', 'N/A')
+            latest_quarter_date = fundamentals_basic.get('latest_quarter_date', 'N/A')
+            
             master_analysis = await self.analyze_with_full_context(
                 comprehensive_data,
+                f"⏰ CRITICAL TEMPORAL CONTEXT:\n"
+                f"- TODAY'S DATE: {current_date_str}\n"
+                f"- CURRENT CALENDAR QUARTER: {current_quarter}\n"
+                f"- LATEST REPORTED QUARTER: {latest_quarter_label} (ended {latest_quarter_date})\n"
+                f"- ONLY discuss quarters/earnings that have ALREADY been reported (are in the PAST)\n"
+                f"- DO NOT mention 'upcoming' earnings unless specifically discussing future guidance\n"
+                f"- If discussing future quarters, be explicit: 'expected in Q4 2024' not 'upcoming Q3'\n"
+                f"- When mentioning quarters, use FISCAL quarters (not calendar quarters) if company uses them\n\n"
                 f"Perform comprehensive analysis for {self.ticker}.\n\n"
                 f"Current Market Data:\n"
                 f"- Price: ${current_price:.2f}\n"
