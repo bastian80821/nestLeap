@@ -656,32 +656,28 @@ const Dashboards: React.FC = () => {
                     </div>
                   </div>
                 )}
-                {analysis.revenue_growth && (
-                  <div className="text-center p-3 bg-white dark:bg-gray-800 rounded-lg">
-                    <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">
-                      Revenue Growth (TTM)
-                    </div>
-                    <div className={`font-bold text-xl ${analysis.revenue_growth > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                      {analysis.revenue_growth.toFixed(1)}%
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                      Trailing 12 Months
-                    </div>
+                <div className="text-center p-3 bg-white dark:bg-gray-800 rounded-lg">
+                  <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">
+                    Revenue Growth (YoY)
                   </div>
-                )}
-                {analysis.earnings_growth && (
-                  <div className="text-center p-3 bg-white dark:bg-gray-800 rounded-lg">
-                    <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">
-                      Earnings Growth (TTM)
-                    </div>
-                    <div className={`font-bold text-xl ${analysis.earnings_growth > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                      {analysis.earnings_growth.toFixed(1)}%
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                      Trailing 12 Months
-                    </div>
+                  <div className={`font-bold text-xl ${analysis.revenue_growth && analysis.revenue_growth > 0 ? 'text-green-600 dark:text-green-400' : analysis.revenue_growth && analysis.revenue_growth < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-500'}`}>
+                    {analysis.revenue_growth != null ? `${analysis.revenue_growth.toFixed(1)}%` : 'N/A'}
                   </div>
-                )}
+                  <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                    Year over Year
+                  </div>
+                </div>
+                <div className="text-center p-3 bg-white dark:bg-gray-800 rounded-lg">
+                  <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">
+                    Earnings Growth (YoY)
+                  </div>
+                  <div className={`font-bold text-xl ${analysis.earnings_growth && analysis.earnings_growth > 0 ? 'text-green-600 dark:text-green-400' : analysis.earnings_growth && analysis.earnings_growth < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-500'}`}>
+                    {analysis.earnings_growth != null ? `${analysis.earnings_growth.toFixed(1)}%` : 'N/A'}
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                    Year over Year
+                  </div>
+                </div>
                 {analysis.debt_to_equity && (
                   <div className="text-center p-3 bg-white dark:bg-gray-800 rounded-lg">
                     <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Debt/Equity</div>
