@@ -199,9 +199,10 @@ class BatchAnalysisService:
     
     async def load_sp500_tickers(self) -> List[str]:
         """
-        Load or initialize S&P 500 tickers
+        Load or initialize large-cap US stock tickers (Russell 1000 style)
         
-        Loads all ~500 S&P 500 component stocks into the database.
+        Loads ~1000 of the largest US stocks. The $50B market cap filter will
+        further narrow this down to the most relevant companies.
         """
         db = SessionLocal()
         try:
@@ -209,7 +210,7 @@ class BatchAnalysisService:
             count = db.query(SP500Stock).count()
             
             if count == 0:
-                # Full S&P 500 list (as of 2025)
+                # Russell 1000 style list: S&P 500 + mid/large-cap growth stocks
                 sp500_tickers = [
                     'A', 'AAL', 'AAPL', 'ABBV', 'ABC', 'ABMD', 'ABT', 'ACN', 'ADBE', 'ADI',
                     'ADM', 'ADP', 'ADSK', 'AEE', 'AEP', 'AES', 'AFL', 'AIG', 'AIZ', 'AJG',
@@ -260,7 +261,46 @@ class BatchAnalysisService:
                     'VICI', 'VLO', 'VMC', 'VRSK', 'VRSN', 'VRTX', 'VTR', 'VTRS', 'VZ', 'WAB',
                     'WAT', 'WBA', 'WBD', 'WDC', 'WEC', 'WELL', 'WFC', 'WM', 'WMB', 'WMT',
                     'WRB', 'WRK', 'WST', 'WTW', 'WY', 'WYNN', 'XEL', 'XOM', 'XRAY', 'XYL',
-                    'YUM', 'ZBH', 'ZBRA', 'ZION', 'ZTS'
+                    'YUM', 'ZBH', 'ZBRA', 'ZION', 'ZTS',
+                    # Additional mid/large-cap stocks (Russell 1000 additions)
+                    'ABNB', 'ACGL', 'ACM', 'ADNT', 'AFG', 'AFRM', 'AGO', 'ALHC', 'ALNY', 'AMED',
+                    'AMRC', 'ANDV', 'APPN', 'ARCC', 'ARMK', 'ASGN', 'ASPN', 'AYI', 'BC', 'BCPC',
+                    'BERY', 'BG', 'BHF', 'BLD', 'BMRN', 'BNL', 'BOX', 'BRX', 'BURL', 'CABO',
+                    'CADE', 'CACC', 'CAR', 'CBSH', 'CCS', 'CELG', 'CFR', 'CHE', 'CHGG', 'CHH',
+                    'CHWY', 'CIT', 'CNHI', 'CNK', 'CNO', 'COIN', 'COLM', 'CONE', 'CPRI', 'CRS',
+                    'CUBE', 'CUZ', 'CVNA', 'CVLT', 'CW', 'CWT', 'CWEN', 'DBX', 'DCI', 'DDOG',
+                    'DDS', 'DECK', 'DEI', 'DELL', 'DFIN', 'DKS', 'DOC', 'DOCS', 'DOMO', 'DOCU',
+                    'DT', 'DV', 'EAT', 'EEFT', 'EGP', 'EHC', 'ELS', 'ENR', 'ENTG', 'EPRT',
+                    'EQC', 'ESNT', 'ESTC', 'ETH', 'EVH', 'EVR', 'EXP', 'FAF', 'FBIN', 'FCN',
+                    'FHN', 'FIVE', 'FL', 'FLO', 'FLS', 'FNB', 'FNF', 'FR', 'FRSH', 'FSS',
+                    'FUL', 'FWRD', 'GEN', 'GGG', 'GH', 'GHC', 'GLPI', 'GOLF', 'GPI', 'GPS',
+                    'GRAM', 'GRFS', 'GRUB', 'GTLS', 'GXO', 'H', 'HALO', 'HBI', 'HCP', 'HE',
+                    'HELE', 'HIBB', 'HLF', 'HLI', 'HNI', 'HOMB', 'HP', 'HRB', 'HRI', 'HTH',
+                    'HTZ', 'HUBG', 'HUN', 'IAA', 'IAC', 'IBP', 'INFO', 'IPGP', 'IRT', 'ITT',
+                    'JBGS', 'JBL', 'JEF', 'JHG', 'JLL', 'JMIA', 'JOUT', 'KAR', 'KEX', 'KFY',
+                    'KN', 'KNX', 'KRC', 'KRG', 'KSS', 'KTB', 'LAMR', 'LAZR', 'LC', 'LEA',
+                    'LEG', 'LESL', 'LFUS', 'LITE', 'LIVN', 'LPX', 'LPLA', 'LRN', 'LSI', 'LXP',
+                    'LYFT', 'M', 'MAC', 'MAN', 'MANH', 'MASI', 'MCY', 'MD', 'MDC', 'MEDP',
+                    'MELI', 'MFA', 'MIDD', 'MIK', 'MLI', 'MOD', 'MOG.A', 'MRC', 'MRVL', 'MSG',
+                    'MSGE', 'MTG', 'MTN', 'MTZ', 'MUR', 'MXIM', 'NBR', 'NCR', 'NFE', 'NLS',
+                    'NLY', 'NN', 'NNN', 'NOV', 'NPO', 'NRZ', 'NSA', 'NTB', 'NVT', 'NWL',
+                    'NWN', 'OC', 'ODP', 'OFC', 'OGE', 'OGS', 'OHI', 'OII', 'OLN', 'ORA',
+                    'OSK', 'OUT', 'OVV', 'OZK', 'PAG', 'PARA', 'PATK', 'PBCT', 'PBI', 'PBF',
+                    'PCTY', 'PDCE', 'PEB', 'PENN', 'PII', 'PINC', 'PK', 'PLNT', 'PLTR', 'PNFP',
+                    'PNM', 'POR', 'POST', 'PRGO', 'PRSP', 'PSB', 'PSTG', 'PVH', 'PZN', 'QL',
+                    'R', 'RAMP', 'RBA', 'RC', 'RDN', 'REXR', 'RGA', 'RH', 'RILY', 'RIOT',
+                    'RKT', 'RLI', 'RLJ', 'ROKU', 'RPRX', 'RRC', 'RRGB', 'RS', 'RST', 'RUTH',
+                    'RXN', 'SAGE', 'SAIC', 'SANM', 'SAM', 'SBH', 'SCCO', 'SEIC', 'SF', 'SFM',
+                    'SGEN', 'SGH', 'SIRI', 'SIX', 'SKT', 'SKX', 'SKY', 'SLG', 'SLM', 'SM',
+                    'SMCI', 'SMP', 'SNAP', 'SNV', 'SNX', 'SON', 'SPCE', 'SPR', 'SPOT', 'SQ',
+                    'SRC', 'SRCL', 'SSNC', 'SSL', 'ST', 'STAG', 'STER', 'STOR', 'STWD', 'SUI',
+                    'SUM', 'SUN', 'SUPN', 'TEAM', 'TECK', 'TELZ', 'TEX', 'TFSL', 'THG', 'THO',
+                    'TNET', 'TOL', 'TPH', 'TPL', 'TPX', 'TREX', 'TRI', 'TRIP', 'TRN', 'TRUP',
+                    'TTC', 'TTD', 'TW', 'TWO', 'TWTR', 'TX', 'TXRH', 'TXMD', 'UBER', 'UE',
+                    'UFPI', 'UGI', 'UPST', 'USFD', 'USLM', 'VAC', 'VC', 'VLY', 'VNO', 'VNT',
+                    'VOYA', 'VRE', 'VST', 'WDAY', 'WEN', 'WEX', 'WHR', 'WING', 'WK', 'WLK',
+                    'WNC', 'WPX', 'WRE', 'WRI', 'WSC', 'WSM', 'WSO', 'WWE', 'WWW', 'X',
+                    'XPO', 'YETI', 'Z', 'ZEN', 'ZG', 'ZI', 'ZNGA', 'ZM', 'ZS', 'ZUO'
                 ]
                 
                 for ticker in sp500_tickers:
@@ -268,7 +308,7 @@ class BatchAnalysisService:
                     db.add(sp_stock)
                 
                 db.commit()
-                logger.info(f"Initialized SP500 list with {len(sp500_tickers)} tickers")
+                logger.info(f"Initialized large-cap US stock list with {len(sp500_tickers)} tickers (Russell 1000 style)")
                 
             # Return existing tickers
             stocks = db.query(SP500Stock).filter(SP500Stock.is_active == True).all()
