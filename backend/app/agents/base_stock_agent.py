@@ -181,13 +181,19 @@ Provide your analysis as a JSON object matching the specified format.
             latest_quarter_label = None
             
             try:
-                # Get quarterly income statement (has Normalized Income for non-GAAP earnings)
+                # Get quarterly income statement - has actual fiscal quarter end dates AND latest EPS
                 quarterly = stock.quarterly_income_stmt
+                
+                # Get earnings_dates for extended historical data (8+ quarters)
+                earnings_dates = stock.earnings_dates
+                
+                # Start with quarterly_income_stmt for the most recent data
                 if not quarterly.empty and len(quarterly.columns) >= 5:
-                    # Get quarter date and extract year/quarter
-                    latest_quarter_date = quarterly.columns[0].strftime('%Y-%m-%d')
-                    quarter_month = quarterly.columns[0].month
-                    quarter_year = quarterly.columns[0].year
+                    # Get the actual fiscal quarter end date
+                    fiscal_quarter_end = quarterly.columns[0]
+                    latest_quarter_date = fiscal_quarter_end.strftime('%Y-%m-%d')
+                    quarter_month = fiscal_quarter_end.month
+                    quarter_year = fiscal_quarter_end.year
                     
                     # Determine quarter label (Q1, Q2, Q3, Q4) with YEAR
                     if quarter_month in [1, 2, 3]:
@@ -199,70 +205,124 @@ Provide your analysis as a JSON object matching the specified format.
                     else:
                         quarter_num = 'Q4'
                     
-                    # Full quarter label with year (e.g., "Q3 2024")
+                    # Full quarter label with year (e.g., "Q3 2025")
                     latest_quarter_label = f"{quarter_num} {quarter_year}"
                     
-                    # Compare latest quarter (Q0) to same quarter last year (Q4, i.e., 4 quarters ago)
-                    
-                    # Calculate earnings growth using Trailing 12-Month (TTM) EPS to smooth volatility
-                    # TTM avoids distortion from one-time charges or seasonal effects in single quarters
+                    # Get latest EPS from quarterly income statement (Diluted EPS)
                     latest_eps = None
                     yoy_eps = None
                     latest_ttm_eps = None
                     prior_ttm_eps = None
                     
                     if 'Diluted EPS' in quarterly.index:
-                        eps_data = quarterly.loc['Diluted EPS']
-                        quarters_available = len(eps_data)
-                        logger.info(f"[{self.ticker}] Available quarters of EPS data: {quarters_available}")
+                        eps_data_quarterly = quarterly.loc['Diluted EPS']
+                        latest_eps = eps_data_quarterly.iloc[0]
                         
-                        if quarters_available >= 8:
-                            # Calculate TTM EPS (sum of last 4 quarters)
-                            latest_ttm_eps = quarterly.loc['Diluted EPS'].iloc[0:4].sum()
-                            # Calculate prior TTM EPS (sum of quarters 4-7, i.e., 1 year ago)
-                            prior_ttm_eps = quarterly.loc['Diluted EPS'].iloc[4:8].sum()
+                        # Now combine with earnings_dates for extended history (for TTM calculation)
+                        # earnings_dates provides 8+ quarters but may lag; quarterly_income_stmt is more current
+                        quarters_available_quarterly = len(eps_data_quarterly)
+                        
+                        # Try to use earnings_dates for historical data if available
+                        if earnings_dates is not None and not earnings_dates.empty:
+                            earnings = earnings_dates[
+                                (earnings_dates['Event Type'] == 'Earnings') & 
+                                (earnings_dates['Reported EPS'].notna())
+                            ].copy().sort_index(ascending=False)
                             
-                            # For display/logging, show most recent quarter EPS
-                            latest_eps = quarterly.loc['Diluted EPS'].iloc[0]
-                            yoy_eps = quarterly.loc['Diluted EPS'].iloc[4]
+                            quarters_available_earnings = len(earnings)
+                            logger.info(f"[{self.ticker}] Available EPS data: {quarters_available_quarterly} quarters (quarterly_income_stmt), {quarters_available_earnings} quarters (earnings_dates)")
+                        else:
+                            quarters_available_earnings = 0
+                            logger.info(f"[{self.ticker}] Available EPS data: {quarters_available_quarterly} quarters (quarterly_income_stmt only)")
+                        
+                        # Strategy: Use quarterly_income_stmt (most current) + earnings_dates (extended history)
+                        # This handles cases where quarterly_income_stmt has latest quarter but earnings_dates lags
+                        
+                        if quarters_available_quarterly >= 5 and quarters_available_earnings >= 8:
+                            # Hybrid approach: Use quarterly_income_stmt for recent quarters, fill in with earnings_dates for older data
+                            # This gives us 8+ quarters for TTM even when earnings_dates hasn't updated yet
                             
-                            if prior_ttm_eps != 0 and not (latest_ttm_eps == 0 and prior_ttm_eps == 0):
-                                if prior_ttm_eps > 0:
-                                    # Normal case: both profitable on TTM basis
-                                    calculated_earnings_growth = ((latest_ttm_eps - prior_ttm_eps) / prior_ttm_eps) * 100
-                                    logger.info(f"[{self.ticker}] TTM EPS: Latest ${latest_ttm_eps:.2f}, Prior ${prior_ttm_eps:.2f}, Growth {calculated_earnings_growth:.1f}%")
+                            # Build a combined EPS series: latest from quarterly, older from earnings_dates
+                            combined_eps = list(eps_data_quarterly.iloc[0:min(4, quarters_available_quarterly)])
+                            
+                            # Fill in remaining quarters from earnings_dates (skipping any that overlap)
+                            if quarters_available_earnings >= 8 - len(combined_eps):
+                                for i in range(len(combined_eps), 8):
+                                    # Map to earnings_dates index (may be offset if quarterly has newer data)
+                                    earnings_idx = i - 1  # Adjust for potential lag
+                                    if earnings_idx >= 0 and earnings_idx < len(earnings):
+                                        combined_eps.append(earnings['Reported EPS'].iloc[earnings_idx])
+                            
+                            if len(combined_eps) >= 8:
+                                # Calculate TTM
+                                latest_ttm_eps = sum(combined_eps[0:4])
+                                prior_ttm_eps = sum(combined_eps[4:8])
+                                
+                                if quarters_available_quarterly >= 5:
+                                    yoy_eps = eps_data_quarterly.iloc[4]
+                                
+                                if prior_ttm_eps != 0 and not (latest_ttm_eps == 0 and prior_ttm_eps == 0):
+                                    if prior_ttm_eps > 0:
+                                        calculated_earnings_growth = ((latest_ttm_eps - prior_ttm_eps) / prior_ttm_eps) * 100
+                                        logger.info(f"[{self.ticker}] TTM EPS Growth: {calculated_earnings_growth:.1f}% (Latest TTM: ${latest_ttm_eps:.2f}, Prior: ${prior_ttm_eps:.2f})")
+                                    else:
+                                        calculated_earnings_growth = None
+                                        logger.info(f"[{self.ticker}] Recovering from loss (TTM): ${prior_ttm_eps:.2f} → ${latest_ttm_eps:.2f}")
+                        elif quarters_available_quarterly >= 5:
+                            # Fallback: Use quarterly_income_stmt for YoY comparison (single quarter)
+                            yoy_eps = eps_data_quarterly.iloc[4]
+                            if yoy_eps and yoy_eps != 0 and not (latest_eps == 0 and yoy_eps == 0):
+                                if yoy_eps > 0:
+                                    calculated_earnings_growth = ((latest_eps - yoy_eps) / yoy_eps) * 100
+                                    logger.info(f"[{self.ticker}] Single quarter YoY EPS Growth: {calculated_earnings_growth:.1f}% (Latest: ${latest_eps:.2f}, YoY: ${yoy_eps:.2f})")
                                 else:
-                                    # Prior TTM was a LOSS - show as "Recovering from Loss"
                                     calculated_earnings_growth = None
-                                    logger.info(f"[{self.ticker}] Recovering from loss: TTM EPS ${prior_ttm_eps:.2f} → ${latest_ttm_eps:.2f}")
+                                    logger.info(f"[{self.ticker}] Recovering from loss (quarterly): ${yoy_eps:.2f} → ${latest_eps:.2f}")
                         else:
-                            logger.warning(f"[{self.ticker}] Insufficient data for TTM calculation: only {quarters_available} quarters available (need 8)")
+                            logger.warning(f"[{self.ticker}] Insufficient EPS data: only {quarters_available_quarterly} quarters from quarterly_income_stmt (need 5+ for growth calc)")
                     
-                    # Calculate revenue growth using TTM (same as earnings, for consistency)
-                    latest_ttm_revenue = None
-                    prior_ttm_revenue = None
+                else:
+                    logger.warning(f"[{self.ticker}] No earnings dates data available or insufficient quarterly data")
+                
+                # Calculate revenue growth using TTM (from quarterly income statement)
+                # Note: We still use quarterly_income_stmt for revenue as earnings_dates doesn't have revenue
+                latest_ttm_revenue = None
+                prior_ttm_revenue = None
+                
+                # quarterly was already loaded above
+                if not quarterly.empty and 'Total Revenue' in quarterly.index:
+                    revenue_data = quarterly.loc['Total Revenue']
+                    revenue_quarters_available = len(revenue_data)
+                    logger.info(f"[{self.ticker}] Available quarters of revenue data: {revenue_quarters_available}")
                     
-                    if 'Total Revenue' in quarterly.index:
-                        revenue_data = quarterly.loc['Total Revenue']
-                        revenue_quarters_available = len(revenue_data)
-                        logger.info(f"[{self.ticker}] Available quarters of revenue data: {revenue_quarters_available}")
-                        
-                        if revenue_quarters_available >= 8:
-                            # TTM revenue (sum of last 4 quarters)
-                            latest_ttm_revenue = quarterly.loc['Total Revenue'].iloc[0:4].sum()
-                            # Prior TTM revenue (sum of quarters 4-7)
-                            prior_ttm_revenue = quarterly.loc['Total Revenue'].iloc[4:8].sum()
-                            if prior_ttm_revenue != 0:
-                                calculated_revenue_growth = ((latest_ttm_revenue - prior_ttm_revenue) / prior_ttm_revenue) * 100
-                                logger.info(f"[{self.ticker}] TTM Revenue: Latest ${latest_ttm_revenue/1e9:.2f}B, Prior ${prior_ttm_revenue/1e9:.2f}B, Growth {calculated_revenue_growth:.1f}%")
-                        else:
-                            logger.warning(f"[{self.ticker}] Insufficient revenue data for TTM: only {revenue_quarters_available} quarters available (need 8)")
-                    
-                    earnings_str = f"{calculated_earnings_growth:.1f}%" if calculated_earnings_growth is not None else "N/A (Recovering from Loss)"
-                    logger.info(f"[{self.ticker}] {latest_quarter_label} {latest_quarter_date} - Rev Growth: {calculated_revenue_growth:.1f}%, Earnings Growth: {earnings_str}, EPS: ${latest_eps}")
-                    logger.info(f"[{self.ticker}] DEBUG CALC: latest_eps=${latest_eps}, yoy_eps=${yoy_eps}, calculated_earnings_growth={calculated_earnings_growth}")
+                    if revenue_quarters_available >= 8:
+                        # TTM revenue (sum of last 4 quarters)
+                        latest_ttm_revenue = revenue_data.iloc[0:4].sum()
+                        # Prior TTM revenue (sum of quarters 4-7)
+                        prior_ttm_revenue = revenue_data.iloc[4:8].sum()
+                        if prior_ttm_revenue != 0:
+                            calculated_revenue_growth = ((latest_ttm_revenue - prior_ttm_revenue) / prior_ttm_revenue) * 100
+                            logger.info(f"[{self.ticker}] TTM Revenue: Latest ${latest_ttm_revenue/1e9:.2f}B, Prior ${prior_ttm_revenue/1e9:.2f}B, Growth {calculated_revenue_growth:.1f}%")
+                    elif revenue_quarters_available >= 5:
+                        # Fallback: Single quarter YoY revenue growth
+                        latest_revenue = revenue_data.iloc[0]
+                        yoy_revenue = revenue_data.iloc[4]
+                        if yoy_revenue != 0:
+                            calculated_revenue_growth = ((latest_revenue - yoy_revenue) / yoy_revenue) * 100
+                            logger.info(f"[{self.ticker}] Single quarter YoY Revenue Growth: {calculated_revenue_growth:.1f}%")
+                    else:
+                        logger.warning(f"[{self.ticker}] Insufficient revenue data: only {revenue_quarters_available} quarters available (need 5+)")
+                
+                # Log summary of calculations
+                earnings_str = f"{calculated_earnings_growth:.1f}%" if calculated_earnings_growth is not None else "N/A (Recovering from Loss)"
+                revenue_str = f"{calculated_revenue_growth:.1f}%" if calculated_revenue_growth is not None else "N/A"
+                if latest_quarter_label and latest_eps is not None:
+                    logger.info(f"[{self.ticker}] {latest_quarter_label} {latest_quarter_date} - Rev Growth: {revenue_str}, Earnings Growth: {earnings_str}, EPS: ${latest_eps}")
+                    logger.info(f"[{self.ticker}] DEBUG CALC: latest_eps=${latest_eps}, yoy_eps={yoy_eps}, calculated_earnings_growth={calculated_earnings_growth}")
             except Exception as e:
                 logger.warning(f"Could not calculate quarterly growth: {e}")
+                import traceback
+                logger.debug(traceback.format_exc())
             
             # Calculate Forward PE using our own methodology (more reliable than yfinance)
             calculated_forward_pe = None
