@@ -24,42 +24,56 @@ class NewsAgent(BaseAgent):
             agent_id = "market_news_001"
         
         specialized_prompt = """
-You are a Market News Summarizer. Your job: Read today's articles and tell investors what happened.
+You are a Market News Summarizer writing a balanced daily briefing for investors.
 
-PRIMARY TASK: SUMMARIZE the actual articles (70% of your output)
-- What specific companies are in the news? What did they announce?
-- What did the Federal Reserve or government officials say?
-- What earnings, products, deals, or policy changes were announced?
-- Be specific: mention company names, products, numbers when available
+Your task: Synthesize today's news into a cohesive narrative that covers multiple key stories and their long-term implications.
 
-SECONDARY TASK: Brief context (30% of your output)
-- What does this mean for long-term investors?
-- Which themes or trends does this reinforce?
+STRUCTURE YOUR SUMMARY:
+
+Paragraph 1 (50%): Cover 4-6 key stories from today
+- Mention specific company names and what they announced
+- Include Fed/policy news if present
+- Note significant earnings, deals, or product launches
+- Weave these into a narrative, don't just list them
+
+Paragraph 2 (30%): Connect to broader context
+- How do today's stories fit with recent market trends?
+- What themes are emerging or continuing?
+- Consider economic conditions and sentiment
+
+Paragraph 3 (20%): Implications for investors
+- What does this mean for long-term portfolios?
+- What should investors watch going forward?
+
+IMPORTANT:
+- Cover MULTIPLE stories (4-6), not just one
+- Use the historical context and market data provided
+- Be specific (company names, events) but maintain flow
+- Write as a cohesive narrative, not bullet points
 
 DO NOT:
-- Write general commentary without mentioning specific articles
+- Focus on only one article and ignore the rest
 - Predict short-term price movements
-- Mention index levels, percentage moves, or technical indicators
+- Mention index levels, percentages, or technical indicators
 - Quote article counts, sentiment scores, or system details
 
 Output Format (JSON):
 {
     "overall_news_impact": "Very Positive|Positive|Neutral|Negative|Very Negative",
-    "major_events": ["Specific event 1", "Specific event 2", "Specific event 3"],
+    "major_events": ["event1", "event2", "event3", "event4"],
     "key_themes": ["theme1", "theme2"],
     "sector_impacts": {"Technology": "positive", "Healthcare": "neutral"},
-    "market_implications": "2-3 paragraph news summary: [Paragraph 1: SUMMARIZE 4-5 specific articles with company names and what happened] [Paragraph 2: Brief implications for long-term investors and what to watch]",
+    "market_implications": "3 paragraph summary following the structure above",
     "confidence": float (0-1),
     "finding_type": "market_news_analysis"
 }
 
-Example (GOOD - specific articles summarized):
-"Apple announced new AI features for iPhone 16, projecting strong holiday sales. Tesla reported Q3 deliveries above analyst expectations despite production challenges in Germany. Federal Reserve Chair Powell indicated rates would remain elevated into early 2026, citing persistent core inflation. JPMorgan raised full-year guidance following strong investment banking results.
+Example (BALANCED):
+"Apple unveiled new AI-powered features across its product line, targeting enterprise customers alongside consumers. Tesla reported mixed Q3 results with strong deliveries but margin pressure from price competition. Federal Reserve officials signaled patience on rate cuts, citing resilient employment data. Meanwhile, JPMorgan and Goldman Sachs both raised full-year guidance on strength in investment banking, and Pfizer announced promising trial results for its next-generation obesity drug.
 
-For long-term investors, the tech earnings strength reinforces AI adoption themes, while higher-for-longer rates favor financial stocks over high-growth names. Watch upcoming inflation data and Q4 guidance from retailers as key signals for 2026 positioning."
+These developments continue recent themes: AI adoption driving tech spending, intense EV competition compressing margins, and higher-for-longer rates benefiting financials. The Fed's cautious stance reflects economic resilience but also means elevated borrowing costs persist, favoring profitable companies over high-growth names.
 
-Example (BAD - generic, no articles):
-"Markets showed mixed sentiment today as various factors influenced investor outlook. The technology sector faces both opportunities and challenges going forward. Investors should remain cautious and monitor economic indicators."
+Long-term investors should watch Q4 earnings guidance closely, particularly in tech and consumer discretionary, as holiday spending patterns emerge. The healthcare innovation pipeline remains robust, while financial sector strength suggests corporate activity will stay elevated into 2026."
 """
         
         super().__init__(agent_id, "market_news", specialized_prompt)
@@ -84,23 +98,20 @@ Example (BAD - generic, no articles):
             
             # Analyze news with context
             task_description = (
-                "Read today's articles and write a news summary for investors:\n\n"
-                "PRIMARY (70%): SUMMARIZE the specific articles\n"
-                "- What companies are in the news? What did they announce?\n"
-                "- What did Fed officials or policymakers say?\n"
-                "- What earnings, deals, or product launches happened?\n"
-                "- Be specific: Use company names, quote key figures, mention actual events\n\n"
-                "SECONDARY (30%): Brief implications\n"
-                "- What does this mean for long-term investors?\n"
-                "- What should they watch?\n\n"
-                "Focus on WHAT HAPPENED (specific articles), not generic market commentary."
+                "Write a balanced 3-paragraph daily briefing:\n\n"
+                "Paragraph 1: Summarize 4-6 key stories from today's articles (specific companies, events)\n"
+                "Paragraph 2: Connect these to recent trends and broader market context\n"
+                "Paragraph 3: Implications for long-term investors and what to watch\n\n"
+                "Use the historical context and market data provided. Cover MULTIPLE stories, not just one."
             )
             
-            # Add historical context as brief background (if available)
+            # Add historical context and other agent data as background
             if historical_context and historical_context.get('historical_context'):
                 task_description += (
-                    f"\n\n[Recent trend]: {historical_context['historical_context']}\n"
-                    f"(Use only to note if today continues or reverses this trend)"
+                    f"\n\nRecent market context:\n"
+                    f"- Past week trend: {historical_context['historical_context']}\n"
+                    f"- Persistent themes: {', '.join(historical_context.get('persistent_themes', [])[:3])}\n"
+                    f"Use this to show how today's news fits the bigger picture."
                 )
             
             news_analysis = await self.analyze_with_context(news_data, task_description)
