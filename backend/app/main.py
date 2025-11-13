@@ -84,58 +84,29 @@ async def lifespan(app: FastAPI):
                 # Continue the loop even if there's an error
                 continue
     
-    # Start the daily stock data collection and analysis scheduler
+    # Start the weekly full stock analysis scheduler
     async def scheduled_stock_updates():
-        """Background task that runs stock data collection and analysis daily"""
-        from .services.stock_data_collector import StockDataCollector
-        from .agents.stock_master_agent_v2 import StockMasterAgentV2
+        """Background task that runs full stock analysis weekly (all S&P 500 stocks)"""
+        from .services.batch_analysis_service import BatchAnalysisService
         
-        stock_collector = StockDataCollector()
+        batch_service = BatchAnalysisService()
         
         while True:
             try:
-                # Run at 6 PM EST (after market close) - wait 24 hours between runs
-                await asyncio.sleep(24 * 60 * 60)
+                # Run full batch analysis weekly (every 7 days)
+                await asyncio.sleep(7 * 24 * 60 * 60)  # 7 days
                 
-                logger.info("📈 Running scheduled daily stock data collection...")
+                logger.info("📈 Running scheduled weekly full stock batch analysis (all S&P 500)...")
                 
-                # Collect data for all tracked stocks
-                collection_result = await stock_collector.collect_daily_data_for_tracked_stocks()
-                logger.info(f"✅ Stock data collection: {collection_result.get('successful', 0)}/{collection_result.get('total_stocks', 0)} stocks")
+                # Load all S&P 500 tickers
+                tickers = await batch_service.load_sp500_tickers()
+                logger.info(f"📊 Starting batch analysis for {len(tickers)} stocks")
                 
-                # Run analysis for tracked stocks (with delay between each)
-                if collection_result.get('successful', 0) > 0:
-                    logger.info("🤖 Running stock analysis for tracked stocks...")
-                    from .models import TrackedStock
-                    
-                    db = SessionLocal()
-                    try:
-                        tracked_stocks = db.query(TrackedStock).filter(
-                            TrackedStock.is_active == True
-                        ).order_by(TrackedStock.priority).limit(10).all()  # Limit to 10 per day for API quotas
-                        
-                        for stock in tracked_stocks:
-                            try:
-                                logger.info(f"  Analyzing {stock.ticker}...")
-                                master_agent = StockMasterAgentV2(stock.ticker)
-                                await master_agent.run_cycle()
-                                
-                                # Update tracked stock stats
-                                stock.analysis_count += 1
-                                stock.last_analysis_date = datetime.utcnow()
-                                db.commit()
-                                
-                                # Delay to avoid rate limits
-                                await asyncio.sleep(5)
-                                
-                            except Exception as e:
-                                logger.error(f"  Error analyzing {stock.ticker}: {e}")
-                                continue
-                        
-                        logger.info(f"✅ Stock analysis completed for {len(tracked_stocks)} stocks")
-                        
-                    finally:
-                        db.close()
+                # Start full batch analysis
+                job_id = await batch_service.start_batch_analysis(tickers, initiated_by="weekly_scheduler")
+                logger.info(f"✅ Weekly batch analysis started: job_id={job_id}, stocks={len(tickers)}")
+                
+                # Note: The batch analysis runs in the background, we don't wait for it here
                 
             except Exception as e:
                 logger.error(f"❌ Error in scheduled stock updates: {e}")
@@ -172,7 +143,7 @@ async def lifespan(app: FastAPI):
     opportunity_scanner_task = asyncio.create_task(scheduled_opportunity_scanner())
     logger.info("📅 Started 3-hour news processing scheduler")
     logger.info("📅 Started daily fundamentals data collection scheduler")
-    logger.info("📅 Started daily stock data collection and analysis scheduler")
+    logger.info("📅 Started weekly full stock batch analysis scheduler (all S&P 500)")
     logger.info("📅 Started hourly opportunity scanner")
     
     yield
