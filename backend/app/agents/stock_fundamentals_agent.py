@@ -26,6 +26,13 @@ class StockFundamentalsAgent(BaseStockAgent):
         specialized_prompt = f"""
 You are a Stock Fundamentals Analysis AI specializing in {ticker}.
 
+IMPORTANT TEMPORAL CONTEXT:
+- You will receive 'analysis_date' and 'current_quarter' in the data (e.g., "2025-11-13", "Q4 2025")
+- You will receive 'latest_quarter_label' for the most recent reported earnings (e.g., "Q3 2024")
+- ONLY refer to quarters that have already been reported (in the past)
+- DO NOT reference future quarters (e.g., if current is Q4 2025, don't mention Q1 2026 earnings)
+- When discussing "recent" or "latest" earnings, use the 'latest_quarter_label' provided
+
 Your role is to:
 1. Analyze {ticker}'s financial health and valuation metrics
 2. Assess growth prospects and profitability trends

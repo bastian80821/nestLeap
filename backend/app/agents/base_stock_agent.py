@@ -181,19 +181,23 @@ Provide your analysis as a JSON object matching the specified format.
                 # Get quarterly income statement (has Normalized Income for non-GAAP earnings)
                 quarterly = stock.quarterly_income_stmt
                 if not quarterly.empty and len(quarterly.columns) >= 5:
-                    # Get quarter date
+                    # Get quarter date and extract year/quarter
                     latest_quarter_date = quarterly.columns[0].strftime('%Y-%m-%d')
                     quarter_month = quarterly.columns[0].month
+                    quarter_year = quarterly.columns[0].year
                     
-                    # Determine quarter label (Q1, Q2, Q3, Q4)
+                    # Determine quarter label (Q1, Q2, Q3, Q4) with YEAR
                     if quarter_month in [1, 2, 3]:
-                        latest_quarter_label = 'Q1'
+                        quarter_num = 'Q1'
                     elif quarter_month in [4, 5, 6]:
-                        latest_quarter_label = 'Q2'
+                        quarter_num = 'Q2'
                     elif quarter_month in [7, 8, 9]:
-                        latest_quarter_label = 'Q3'
+                        quarter_num = 'Q3'
                     else:
-                        latest_quarter_label = 'Q4'
+                        quarter_num = 'Q4'
+                    
+                    # Full quarter label with year (e.g., "Q3 2024")
+                    latest_quarter_label = f"{quarter_num} {quarter_year}"
                     
                     # Compare latest quarter (Q0) to same quarter last year (Q4, i.e., 4 quarters ago)
                     
@@ -252,6 +256,18 @@ Provide your analysis as a JSON object matching the specified format.
             except Exception as e:
                 logger.warning(f"Could not calculate PEG ratio: {e}")
             
+            # Calculate current quarter for context
+            now = datetime.now()
+            current_month = now.month
+            if current_month in [1, 2, 3]:
+                current_quarter = f"Q1 {now.year}"
+            elif current_month in [4, 5, 6]:
+                current_quarter = f"Q2 {now.year}"
+            elif current_month in [7, 8, 9]:
+                current_quarter = f"Q3 {now.year}"
+            else:
+                current_quarter = f"Q4 {now.year}"
+            
             # Extract key fundamental metrics
             fundamentals = {
                 'symbol': self.ticker,
@@ -260,6 +276,10 @@ Provide your analysis as a JSON object matching the specified format.
                 'industry': info.get('industry', 'Unknown'),
                 'market_cap': info.get('marketCap'),
                 'enterprise_value': info.get('enterpriseValue'),
+                
+                # TEMPORAL CONTEXT (for LLM awareness)
+                'analysis_date': now.strftime('%Y-%m-%d'),
+                'current_quarter': current_quarter,
                 
                 # Valuation metrics
                 'pe_ratio': info.get('trailingPE'),
