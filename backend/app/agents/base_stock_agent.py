@@ -230,23 +230,21 @@ Provide your analysis as a JSON object matching the specified format.
                 # ============================================================
                 # USE YAHOO FINANCE'S GROWTH METRICS DIRECTLY
                 # ============================================================
+                # Debug: Log what we're getting from yfinance
+                logger.info(f"[{self.ticker}] DEBUG: earningsGrowth raw value: {info.get('earningsGrowth')} (type: {type(info.get('earningsGrowth'))})")
+                logger.info(f"[{self.ticker}] DEBUG: revenueGrowth raw value: {info.get('revenueGrowth')} (type: {type(info.get('revenueGrowth'))})")
+                logger.info(f"[{self.ticker}] DEBUG: Total info keys: {len(info.keys())}")
+                logger.info(f"[{self.ticker}] DEBUG: Has earningsGrowth key: {'earningsGrowth' in info}")
+                logger.info(f"[{self.ticker}] DEBUG: Has revenueGrowth key: {'revenueGrowth' in info}")
+                
                 # Yahoo provides earnings growth - use it directly
                 calculated_earnings_growth = info.get('earningsGrowth')
                 if calculated_earnings_growth is not None:
                     calculated_earnings_growth = calculated_earnings_growth * 100  # Convert to percentage
                     logger.info(f"[{self.ticker}] Earnings Growth (from yfinance): {calculated_earnings_growth:.1f}%")
                 else:
-                    # Fallback to quarterly growth if available
-                    quarterly_growth = info.get('earningsQuarterlyGrowth')
-                    if quarterly_growth is not None:
-                        calculated_earnings_growth = quarterly_growth * 100
-                        logger.info(f"[{self.ticker}] Earnings Quarterly Growth (from yfinance): {calculated_earnings_growth:.1f}%")
-                    else:
-                        logger.warning(f"[{self.ticker}] No earnings growth data available from yfinance")
+                    logger.warning(f"[{self.ticker}] No earnings growth data available from yfinance")
                 
-                # ============================================================
-                # USE YAHOO FINANCE'S REVENUE GROWTH DIRECTLY
-                # ============================================================
                 # Yahoo provides revenue growth - use it directly
                 calculated_revenue_growth = info.get('revenueGrowth')
                 if calculated_revenue_growth is not None:
