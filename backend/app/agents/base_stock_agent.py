@@ -173,12 +173,18 @@ Provide your analysis as a JSON object matching the specified format.
             stock = yf.Ticker(self.ticker)
             info = stock.info
             
-            # Calculate growth from quarterly financials (yfinance)
+            # Initialize all calculated variables (in case of exceptions)
             calculated_revenue_growth = None
             calculated_earnings_growth = None
             latest_eps = None
+            yoy_eps = None
+            latest_ttm_eps = None
+            prior_ttm_eps = None
             latest_quarter_date = None
             latest_quarter_label = None
+            calculated_trailing_pe = None
+            calculated_forward_pe = None
+            calculated_peg_ratio = None
             
             try:
                 # Get quarterly income statement - has actual fiscal quarter end dates AND latest EPS
