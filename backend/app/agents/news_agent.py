@@ -269,9 +269,11 @@ Provide specific insights about how news events are likely to affect market dire
             return {}
     
     async def _store_news_analysis(self, news_data: Dict, analysis: Dict):
-        """Store news analysis findings"""
+        """Store news analysis findings AND create/update MarketNewsSummary for frontend"""
         try:
-            # Store as agent finding
+            db = SessionLocal()
+            
+            # 1. Store as agent finding (for agent communication)
             finding = AgentFinding(
                 agent_id=self.agent_id,
                 finding_type='market_news_analysis',
@@ -288,13 +290,26 @@ Provide specific insights about how news events are likely to affect market dire
                 },
                 expires_at=datetime.utcnow() + timedelta(days=7)
             )
-            
-            db = SessionLocal()
             db.add(finding)
+            
+            # 2. Create MarketNewsSummary (for frontend display)
+            # Build a readable summary from the analysis
+            summary_text = f"{analysis.get('market_implications', '')}".strip()
+            if not summary_text:
+                summary_text = f"Market news shows {analysis.get('overall_news_impact', 'neutral')} impact. "
+                if analysis.get('major_events'):
+                    summary_text += f"Major events: {', '.join(analysis.get('major_events', [])[:3])}."
+            
+            news_summary = MarketNewsSummary(
+                summary=summary_text,
+                article_ids=None  # Optional field, not critical for this use case
+            )
+            db.add(news_summary)
+            
             db.commit()
             db.close()
             
-            logger.info(f"Stored news analysis finding: {analysis.get('overall_news_impact', 'Unknown')}")
+            logger.info(f"✅ Stored news analysis: {analysis.get('overall_news_impact', 'Unknown')} + MarketNewsSummary")
             
         except Exception as e:
             logger.error(f"Error storing news analysis: {e}")
