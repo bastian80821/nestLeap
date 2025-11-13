@@ -506,11 +506,11 @@ IMPORTANT: Write risk_factors and catalysts as clean, readable sentences. DO NOT
             logger.error(f"Error in _store_master_analysis: {e}")
     
     async def get_latest_analysis(self) -> Dict:
-        """Get latest master analysis with comprehensive news, averaging last 3 price targets"""
+        """Get latest master analysis from database (NO AVERAGING - just latest)"""
         try:
             db = SessionLocal()
             try:
-                # Get latest analysis (for all text fields)
+                # Get latest analysis
                 latest = db.query(StockAnalysis).filter(
                     StockAnalysis.ticker == self.ticker
                 ).order_by(StockAnalysis.analysis_date.desc()).first()
@@ -518,30 +518,11 @@ IMPORTANT: Write risk_factors and catalysts as clean, readable sentences. DO NOT
                 if not latest:
                     return {'error': f'No analysis available for {self.ticker}'}
                 
-                # Get last 3 analyses to average the price values
-                last_3_analyses = db.query(StockAnalysis).filter(
-                    StockAnalysis.ticker == self.ticker
-                ).order_by(StockAnalysis.analysis_date.desc()).limit(3).all()
-                
-                # Calculate averaged values from last 3 analyses
-                fair_values = []
-                buy_belows = []
-                sell_aboves = []
-                
-                for analysis in last_3_analyses:
-                    findings = analysis.fundamentals_outlook or {}
-                    if findings.get('fair_value_price'):
-                        fair_values.append(findings.get('fair_value_price'))
-                    if findings.get('buy_below'):
-                        buy_belows.append(findings.get('buy_below'))
-                    if findings.get('sell_above'):
-                        sell_aboves.append(findings.get('sell_above'))
-                
-                # Use average if we have values, otherwise use latest
+                # Use ONLY the latest analysis values (NO AVERAGING)
                 agent_findings = latest.fundamentals_outlook or {}
-                fair_value = sum(fair_values) / len(fair_values) if fair_values else agent_findings.get('fair_value_price')
-                buy_below = sum(buy_belows) / len(buy_belows) if buy_belows else agent_findings.get('buy_below')
-                sell_above = sum(sell_aboves) / len(sell_aboves) if sell_aboves else agent_findings.get('sell_above')
+                fair_value = agent_findings.get('fair_value_price')
+                buy_below = agent_findings.get('buy_below')
+                sell_above = agent_findings.get('sell_above')
                 
                 # Get comprehensive news analysis
                 from ..models import StockNewsAnalysis

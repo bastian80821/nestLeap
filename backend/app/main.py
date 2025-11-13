@@ -1367,9 +1367,10 @@ async def trigger_all_agents(background_tasks: BackgroundTasks):
 
 @app.get("/api/stock/{ticker}/analysis")
 async def get_stock_analysis(ticker: str):
-    """Get comprehensive stock analysis with agent intelligence (V2) - from batch database"""
+    """Get stock analysis from database (last generated analysis)"""
     try:
         ticker = ticker.upper()
+        logger.info(f"Retrieving stored analysis for {ticker} from database")
         
         # Check if ticker is in S&P 500
         db = SessionLocal()
@@ -1386,7 +1387,7 @@ async def get_stock_analysis(ticker: str):
         finally:
             db.close()
         
-        # Initialize V2 stock master agent for this ticker
+        # Initialize V2 stock master agent and GET stored analysis from DB
         master_agent = StockMasterAgentV2(ticker)
         analysis = await master_agent.get_latest_analysis()
         
