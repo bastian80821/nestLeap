@@ -9,7 +9,6 @@ import asyncio
 import uuid
 from datetime import datetime
 from typing import List, Dict
-from concurrent.futures import ProcessPoolExecutor
 from loguru import logger
 
 from ..database import SessionLocal
@@ -21,8 +20,7 @@ class BatchAnalysisService:
     """Service for batch analyzing stocks using separate worker process"""
     
     def __init__(self):
-        self.max_concurrent = 10  # Process 10 stocks concurrently in worker process
-        self.executor = ProcessPoolExecutor(max_workers=1)  # Single worker process
+        self.max_concurrent = 10  # Process 10 stocks concurrently
         self.active_jobs = {}  # job_id -> job_status dict
     
     async def start_batch_analysis(self, tickers: List[str], initiated_by: str = "user") -> str:
@@ -62,18 +60,20 @@ class BatchAnalysisService:
         finally:
             db.close()
         
-        # Submit work to separate worker process (non-blocking)
-        loop = asyncio.get_event_loop()
-        loop.run_in_executor(
-            self.executor,
-            run_batch_analysis_sync,
-            job_id,
-            tickers,
-            self.max_concurrent
-        )
-        logger.info(f"[{job_id}] Work submitted to worker process, API remains responsive")
+        # Start batch processing as background task (non-blocking)
+        asyncio.create_task(self._run_batch_async(job_id, tickers))
+        logger.info(f"[{job_id}] Background batch processing started, API remains responsive")
         
         return job_id
+    
+    async def _run_batch_async(self, job_id: str, tickers: List[str]):
+        """Run batch analysis as async background task"""
+        try:
+            logger.info(f"[{job_id}] Starting async batch processing for {len(tickers)} stocks")
+            result = await run_batch_analysis_sync(job_id, tickers, self.max_concurrent)
+            logger.info(f"[{job_id}] Batch completed: {result}")
+        except Exception as e:
+            logger.error(f"[{job_id}] Batch processing error: {e}")
     
     # Note: Batch processing logic moved to batch_worker.py (runs in separate process)
     # This keeps the FastAPI event loop responsive

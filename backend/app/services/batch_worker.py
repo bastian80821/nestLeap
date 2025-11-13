@@ -15,30 +15,22 @@ logger.remove()
 logger.add(sys.stderr, level="INFO")
 
 
-def run_batch_analysis_sync(job_id: str, tickers: List[str], max_concurrent: int = 10):
+async def run_batch_analysis_sync(job_id: str, tickers: List[str], max_concurrent: int = 10):
     """
-    Synchronous wrapper for batch analysis - runs in separate process
-    This function creates its own event loop and runs the async analysis
+    Async batch analysis - runs as background task in main event loop
+    Railway doesn't support ProcessPoolExecutor well, so we use async tasks instead
     """
-    logger.info(f"[{job_id}] Worker process started (PID: {os.getpid()})")
+    logger.info(f"[{job_id}] Batch processing started")
     logger.info(f"[{job_id}] Processing {len(tickers)} stocks with max_concurrent={max_concurrent}")
     
-    # Create new event loop for this process
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
     try:
-        # Run the async batch processing
-        result = loop.run_until_complete(
-            _process_batch_async(job_id, tickers, max_concurrent)
-        )
-        logger.info(f"[{job_id}] Worker process completed: {result['completed']} succeeded, {result['failed']} failed")
+        # Run the async batch processing directly (no separate event loop needed)
+        result = await _process_batch_async(job_id, tickers, max_concurrent)
+        logger.info(f"[{job_id}] Batch completed: {result['completed']} succeeded, {result['failed']} failed")
         return result
     except Exception as e:
-        logger.error(f"[{job_id}] Worker process failed: {e}")
+        logger.error(f"[{job_id}] Batch processing failed: {e}")
         return {'completed': 0, 'failed': len(tickers), 'error': str(e)}
-    finally:
-        loop.close()
 
 
 async def _process_batch_async(job_id: str, tickers: List[str], max_concurrent: int):
