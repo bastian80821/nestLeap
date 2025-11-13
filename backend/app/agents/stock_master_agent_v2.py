@@ -85,7 +85,14 @@ Output Format (JSON) - Generate these specific sections:
         - Undervalued: current price < fair_value * 0.90 (more than 10% below)
         - Fair Value: fair_value * 0.90 <= current price <= fair_value * 1.10 (within ±10%)
         - Overvalued: current price > fair_value * 1.10 (more than 10% above)
-        Example: Fair value $324, current $340 → +4.9% → "Fair Value" (NOT Overvalued),
+        Example: Fair value $324, current $340 → +4.9% → "Fair Value" (NOT Overvalued)
+        
+        CRITICAL OVERRIDE RULES - These override the above thresholds:
+        1. NEVER "Undervalued" if earnings_growth < 0% AND forward_pe > 40 → Use "Fair Value" or "Overvalued"
+        2. NEVER "Undervalued" if forward_pe > 60 → Automatically "Overvalued" regardless of calculation
+        3. NEVER "Undervalued" if peg_ratio cannot be calculated (due to negative growth) → Maximum "Fair Value"
+        4. If forward_pe > current pe_ratio by 50%+ → Market expects further decline → "Overvalued"
+        These rules exist because negative growth + high multiples = market expects MORE pain ahead,
     
     "fair_value_price": float (MANDATORY NUMBER - calculate from fundamentals, e.g., 340.50),
     "buy_below": float (MANDATORY NUMBER - fair_value_price minus 15-20% for long-term entry, e.g., 272-289),
