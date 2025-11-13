@@ -199,9 +199,14 @@ IMPORTANT: Write risk_factors and catalysts as clean, readable sentences. DO NOT
                 f"- PE vs Industry: {pe_vs_industry} (premium/discount to industry)\n"
                 f"- Sector/Industry: {sector} / {industry}\n"
                 f"- Profit Margin: {profit_margin}\n"
-                f"- Revenue Growth: {revenue_growth}\n"
-                f"- Earnings Growth: {earnings_growth}\n"
-                f"NOTE: You also have access to latest_eps (single quarter) and latest_ttm_eps (TTM) to assess seasonality.\n\n"
+                f"- Revenue Growth (YoY): {revenue_growth}\n"
+                f"- Earnings Growth (YoY): {earnings_growth}\n\n"
+                f"SEASONALITY CONTEXT (assess quarterly volatility):\n"
+                f"- Latest Quarter EPS: {fundamentals_basic.get('latest_eps', 'N/A')} (single quarter)\n"
+                f"- TTM EPS: {fundamentals_basic.get('latest_ttm_eps', 'N/A')} (smoothed, 12 months)\n"
+                f"- Compare these to identify if latest quarter is strong/weak relative to annual average\n"
+                f"- If latest quarter >> TTM/4, company had strong recent quarter (may be seasonal)\n"
+                f"- If latest quarter << TTM/4, company had weak recent quarter (cyclical/seasonal)\n\n"
                 f"LONG-TERM FUNDAMENTALS TREND ANALYSIS (from Fundamentals Agent):\n"
                 f"- Revenue Growth Trend: {revenue_trend} (over past 4-8 quarters)\n"
                 f"- Earnings Consistency: {earnings_consistency} (0-1 score)\n"
@@ -373,7 +378,8 @@ IMPORTANT: Write risk_factors and catalysts as clean, readable sentences. DO NOT
                         'industry': fundamentals.get('industry'),
                         'latest_quarter_date': fundamentals.get('latest_quarter_date'),
                         'latest_quarter_label': fundamentals.get('latest_quarter_label'),
-                        'latest_eps': fundamentals.get('latest_eps'),
+                        'latest_eps': fundamentals.get('latest_eps'),  # Single quarter EPS
+                        'latest_ttm_eps': fundamentals.get('latest_ttm_eps'),  # TTM EPS for seasonality context
                     },
                     
                     # Fundamentals Analysis (AI-analyzed)
