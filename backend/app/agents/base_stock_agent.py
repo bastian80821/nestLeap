@@ -220,19 +220,31 @@ Provide your analysis as a JSON object matching the specified format.
                         
                         # Check for stock splits to adjust historical EPS data
                         split_adjustment_factor = 1.0
+                        split_date_cutoff = None
                         try:
                             splits = stock.splits
                             if not splits.empty:
-                                # Get the most recent quarter date (latest EPS data point)
-                                latest_quarter_date_ts = eps_data_quarterly.index[0]
+                                # We compare Latest TTM (quarters 0-3) vs Prior TTM (quarters 4-7)
+                                # If a split occurred AFTER quarter 4's date, then quarters 4-7 are pre-split
+                                # and need to be adjusted (divided by split ratio) to be comparable
                                 
-                                # Check if any splits occurred after the oldest quarter we'll use (8 quarters back)
-                                # We need to adjust older EPS data to be comparable with newer data
-                                for split_date, split_ratio in splits.items():
-                                    # If split occurred after our oldest data point, we need to adjust older data
-                                    if split_date > eps_data_quarterly.index[-1]:  # Split is more recent than our oldest data
-                                        split_adjustment_factor *= split_ratio
-                                        logger.info(f"[{self.ticker}] Stock split detected: {split_ratio}:1 on {split_date.strftime('%Y-%m-%d')} - will adjust historical EPS")
+                                # Get the date of the 4th most recent quarter (start of "prior TTM" window)
+                                if len(eps_data_quarterly) >= 5:
+                                    quarter_4_date = eps_data_quarterly.index[4]
+                                    
+                                    # Find splits that occurred after this date
+                                    for split_date, split_ratio in splits.items():
+                                        if split_date > quarter_4_date:
+                                            split_adjustment_factor *= split_ratio
+                                            split_date_cutoff = split_date
+                                            logger.info(f"[{self.ticker}] Stock split detected: {split_ratio}:1 on {split_date.strftime('%Y-%m-%d')} - will adjust EPS from before this date")
+                                            
+                                            # Adjust the quarterly EPS data itself for older quarters
+                                            for idx in range(len(eps_data_quarterly)):
+                                                quarter_date = eps_data_quarterly.index[idx]
+                                                if quarter_date < split_date:
+                                                    eps_data_quarterly.iloc[idx] = eps_data_quarterly.iloc[idx] / split_ratio
+                                                    logger.info(f"[{self.ticker}] Adjusted EPS for quarter {quarter_date.strftime('%Y-%m-%d')}: divided by {split_ratio}")
                         except Exception as e:
                             logger.debug(f"[{self.ticker}] Could not check for stock splits: {e}")
                         
