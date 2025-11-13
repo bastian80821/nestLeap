@@ -527,6 +527,10 @@ IMPORTANT: Write risk_factors and catalysts as clean, readable sentences. DO NOT
                     StockFundamentalsAnalysis.ticker == self.ticker
                 ).order_by(StockFundamentalsAnalysis.analysis_date.desc()).first()
                 
+                # CRITICAL FIX: Get fresh fundamentals with our calculated TTM data
+                # This ensures we ALWAYS have revenue_growth, earnings_growth, etc.
+                fresh_fundamentals = await self.get_stock_fundamentals()
+                
                 response = {
                     'ticker': self.ticker,
                     'analysis_date': latest.analysis_date.isoformat(),
@@ -556,22 +560,24 @@ IMPORTANT: Write risk_factors and catalysts as clean, readable sentences. DO NOT
                     # - key_insights, why_current_price, future_outlook, technical_rating, 
                     # - support_level, resistance_level, agent_confidence
                     
-                    # Fundamental Metrics
+                    # Fundamental Metrics - ALWAYS use fresh calculated TTM data
                     'pe_ratio': latest.pe_ratio,
                     'forward_pe': latest.forward_pe,
                     'peg_ratio': latest.peg_ratio,
                     'market_cap': latest.market_cap,
-                    'revenue_growth': latest_fund.revenue_growth if latest_fund else None,
-                    'earnings_growth': latest_fund.earnings_growth if latest_fund else None,
-                    'profit_margins': latest_fund.profit_margins if latest_fund else None,
-                    'debt_to_equity': latest_fund.debt_to_equity if latest_fund else None,
-                    'return_on_equity': latest_fund.return_on_equity if latest_fund else None,
+                    'revenue_growth': fresh_fundamentals.get('revenue_growth'),  # TTM from our calculation
+                    'earnings_growth': fresh_fundamentals.get('earnings_growth'),  # TTM from our calculation
+                    'profit_margins': fresh_fundamentals.get('profit_margins'),  # From yfinance
+                    'debt_to_equity': fresh_fundamentals.get('debt_to_equity'),  # From yfinance
+                    'return_on_equity': fresh_fundamentals.get('return_on_equity'),  # From yfinance
                     'valuation_conclusion': latest_fund.valuation_conclusion if latest_fund else None,
                     
-                    # Quarter Information
-                    'latest_quarter_date': latest_fund.latest_quarter_date if latest_fund and hasattr(latest_fund, 'latest_quarter_date') else None,
-                    'latest_quarter_label': latest_fund.latest_quarter_label if latest_fund and hasattr(latest_fund, 'latest_quarter_label') else None,
-                    'latest_eps': latest_fund.latest_eps if latest_fund and hasattr(latest_fund, 'latest_eps') else None,
+                    # Quarter Information - from fresh fundamentals
+                    'latest_quarter_date': fresh_fundamentals.get('latest_quarter_date'),
+                    'latest_quarter_label': fresh_fundamentals.get('latest_quarter_label'),
+                    'latest_eps': fresh_fundamentals.get('latest_eps'),
+                    'latest_ttm_eps': fresh_fundamentals.get('latest_ttm_eps'),  # TTM EPS
+                    'prior_ttm_eps': fresh_fundamentals.get('prior_ttm_eps'),  # Prior TTM EPS
                 }
                 
                 # Add comprehensive news analysis if available
