@@ -1240,7 +1240,7 @@ async def get_latest_market_sentiment():
         db.close()
 
 
-@app.post("/api/agents/sentiment/trigger")
+@app.post("/api/agents/sentiment/trigger", dependencies=[Depends(verify_admin_key)])
 async def trigger_sentiment_agent(background_tasks: BackgroundTasks):
     """Trigger market sentiment agent analysis"""
     try:
@@ -1260,7 +1260,7 @@ async def trigger_sentiment_agent(background_tasks: BackgroundTasks):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/agents/news/trigger")
+@app.post("/api/agents/news/trigger", dependencies=[Depends(verify_admin_key)])
 async def trigger_news_agent(background_tasks: BackgroundTasks):
     """Trigger news agent analysis"""
     try:
@@ -1344,7 +1344,7 @@ async def get_latest_news_with_intelligence():
         db.close()
 
 
-@app.post("/api/agents/trigger-all")
+@app.post("/api/agents/trigger-all", dependencies=[Depends(verify_admin_key)])
 async def trigger_all_agents(background_tasks: BackgroundTasks):
     """Trigger all available market analysis services"""
     try:
