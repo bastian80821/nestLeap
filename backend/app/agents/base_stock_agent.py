@@ -218,6 +218,24 @@ Provide your analysis as a JSON object matching the specified format.
                         eps_data_quarterly = quarterly.loc['Diluted EPS']
                         latest_eps = eps_data_quarterly.iloc[0]
                         
+                        # Check for stock splits to adjust historical EPS data
+                        split_adjustment_factor = 1.0
+                        try:
+                            splits = stock.splits
+                            if not splits.empty:
+                                # Get the most recent quarter date (latest EPS data point)
+                                latest_quarter_date_ts = eps_data_quarterly.index[0]
+                                
+                                # Check if any splits occurred after the oldest quarter we'll use (8 quarters back)
+                                # We need to adjust older EPS data to be comparable with newer data
+                                for split_date, split_ratio in splits.items():
+                                    # If split occurred after our oldest data point, we need to adjust older data
+                                    if split_date > eps_data_quarterly.index[-1]:  # Split is more recent than our oldest data
+                                        split_adjustment_factor *= split_ratio
+                                        logger.info(f"[{self.ticker}] Stock split detected: {split_ratio}:1 on {split_date.strftime('%Y-%m-%d')} - will adjust historical EPS")
+                        except Exception as e:
+                            logger.debug(f"[{self.ticker}] Could not check for stock splits: {e}")
+                        
                         # Now combine with earnings_dates for extended history (for TTM calculation)
                         # earnings_dates provides 8+ quarters but may lag; quarterly_income_stmt is more current
                         quarters_available_quarterly = len(eps_data_quarterly)
@@ -251,12 +269,22 @@ Provide your analysis as a JSON object matching the specified format.
                                     # Map to earnings_dates index (may be offset if quarterly has newer data)
                                     earnings_idx = i - 1  # Adjust for potential lag
                                     if earnings_idx >= 0 and earnings_idx < len(earnings):
-                                        combined_eps.append(earnings['Reported EPS'].iloc[earnings_idx])
+                                        eps_value = earnings['Reported EPS'].iloc[earnings_idx]
+                                        
+                                        # Apply split adjustment to older quarters (beyond the 4 most recent)
+                                        # These are pre-split, so we divide by the split ratio to make them comparable
+                                        if i >= 4 and split_adjustment_factor != 1.0:
+                                            eps_value = eps_value / split_adjustment_factor
+                                            
+                                        combined_eps.append(eps_value)
                             
                             if len(combined_eps) >= 8:
-                                # Calculate TTM
+                                # Calculate TTM (now split-adjusted)
                                 latest_ttm_eps = sum(combined_eps[0:4])
                                 prior_ttm_eps = sum(combined_eps[4:8])
+                                
+                                if split_adjustment_factor != 1.0:
+                                    logger.info(f"[{self.ticker}] Split-adjusted Prior TTM EPS: ${prior_ttm_eps:.2f} (adjusted by factor {split_adjustment_factor:.1f})")
                                 
                                 if quarters_available_quarterly >= 5:
                                     yoy_eps = eps_data_quarterly.iloc[4]
@@ -271,6 +299,12 @@ Provide your analysis as a JSON object matching the specified format.
                         elif quarters_available_quarterly >= 5:
                             # Fallback: Use quarterly_income_stmt for YoY comparison (single quarter)
                             yoy_eps = eps_data_quarterly.iloc[4]
+                            
+                            # Apply split adjustment to YoY EPS if needed
+                            if yoy_eps and split_adjustment_factor != 1.0:
+                                yoy_eps = yoy_eps / split_adjustment_factor
+                                logger.info(f"[{self.ticker}] Split-adjusted YoY EPS: ${yoy_eps:.2f} (factor: {split_adjustment_factor:.1f})")
+                            
                             if yoy_eps and yoy_eps != 0 and not (latest_eps == 0 and yoy_eps == 0):
                                 if yoy_eps > 0:
                                     calculated_earnings_growth = ((latest_eps - yoy_eps) / yoy_eps) * 100
