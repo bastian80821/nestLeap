@@ -13,7 +13,7 @@ from loguru import logger
 
 from .base_agent import BaseAgent
 from ..database import SessionLocal
-from ..models import MarketArticle, MarketNewsSummary, AgentFinding
+from ..models import MarketArticle, MarketNewsSummary
 
 
 class NewsAgent(BaseAgent):
@@ -269,50 +269,30 @@ Provide specific insights about how news events are likely to affect market dire
             return {}
     
     async def _store_news_analysis(self, news_data: Dict, analysis: Dict):
-        """Store news analysis findings AND create/update MarketNewsSummary for frontend"""
+        """Store news analysis as MarketNewsSummary (single source of truth for all consumers)"""
         try:
             db = SessionLocal()
             
-            # 1. Store as agent finding (for agent communication)
-            finding = AgentFinding(
-                agent_id=self.agent_id,
-                finding_type='market_news_analysis',
-                subject='market_news',
-                confidence_score=analysis.get('confidence', 0.0),
-                finding_data={
-                    'analysis': analysis,
-                    'news_data_summary': {
-                        'total_articles': news_data.get('total_articles', 0),
-                        'avg_sentiment': news_data.get('avg_sentiment_score', 0.5),
-                        'key_themes': news_data.get('key_themes', []),
-                        'affected_sectors': news_data.get('affected_sectors', {})
-                    }
-                },
-                expires_at=datetime.utcnow() + timedelta(days=7)
-            )
-            db.add(finding)
-            
-            # 2. Create MarketNewsSummary (for frontend display)
-            # Build a readable summary from the analysis
+            # Build a readable summary from the LLM analysis
             summary_text = f"{analysis.get('market_implications', '')}".strip()
             if not summary_text:
                 summary_text = f"Market news shows {analysis.get('overall_news_impact', 'neutral')} impact. "
                 if analysis.get('major_events'):
                     summary_text += f"Major events: {', '.join(analysis.get('major_events', [])[:3])}."
             
+            # Create MarketNewsSummary (consumed by frontend AND other agents via request_market_context)
             news_summary = MarketNewsSummary(
                 summary=summary_text,
-                article_ids=None  # Optional field, not critical for this use case
+                article_ids=None  # Optional field
             )
             db.add(news_summary)
-            
             db.commit()
             db.close()
             
-            logger.info(f"✅ Stored news analysis: {analysis.get('overall_news_impact', 'Unknown')} + MarketNewsSummary")
+            logger.info(f"✅ Stored MarketNewsSummary: {analysis.get('overall_news_impact', 'Unknown')}")
             
         except Exception as e:
-            logger.error(f"Error storing news analysis: {e}")
+            logger.error(f"Error storing news summary: {e}")
             if 'db' in locals():
                 db.rollback()
                 db.close() 
