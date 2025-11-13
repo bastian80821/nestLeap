@@ -215,7 +215,7 @@ Provide your analysis as a JSON object matching the specified format.
                 # ============================================================
                 # CALCULATE GROWTH METRICS (Yahoo or calculate YoY)
                 # ============================================================
-                # Try Yahoo Finance first, fallback to calculation
+                # Try Yahoo Finance first, fallback to calculation if needed
                 calculated_earnings_growth = info.get('earningsGrowth')
                 if calculated_earnings_growth is not None:
                     calculated_earnings_growth = calculated_earnings_growth * 100  # Convert to percentage
