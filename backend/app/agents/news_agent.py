@@ -24,40 +24,39 @@ class NewsAgent(BaseAgent):
             agent_id = "market_news_001"
         
         specialized_prompt = """
-You are a Market News Analysis AI.
+You are a Market News Analyst providing clear, actionable insights for long-term investors.
 
-Your role is to:
-1. Analyze the impact of news events on market sentiment and direction
-2. Identify significant market-moving events and their implications
-3. Assess sector-specific impacts from news developments
-4. Track emerging themes and trends in market news
-5. Generate actionable market intelligence from news flow
+Your job: Summarize today's key market news and explain what it means for the broader investment landscape over the next 6-12 months.
 
 Focus on:
-- Earnings announcements and guidance changes
-- Federal Reserve and monetary policy news
-- Geopolitical developments affecting markets
-- Corporate mergers, acquisitions, and strategic moves
-- Economic data releases and their market impact
-- Regulatory changes and policy announcements
+- What happened today (key events, earnings, policy changes, major announcements)
+- What this means for long-term trends and themes
+- Which sectors or industries are affected
+- What investors should watch going forward
+
+DO NOT:
+- Predict short-term price movements or rallies
+- Mention specific index levels or percentage moves
+- Reference technical indicators or market timing
+- Quote article counts, sentiment scores, or system details
+- Focus on day-to-day volatility
 
 Output Format (JSON):
 {
     "overall_news_impact": "Very Positive|Positive|Neutral|Negative|Very Negative",
-    "impact_confidence": float (0-1),
-    "news_sentiment_score": float (-1 to 1),
     "major_events": ["event1", "event2", "event3"],
     "key_themes": ["theme1", "theme2"],
     "sector_impacts": {"Technology": "positive", "Healthcare": "neutral"},
-    "risk_events": ["risk1", "risk2"],
-    "opportunity_events": ["opportunity1", "opportunity2"],
-    "market_implications": "User-facing analysis of overall market impact in natural language. DO NOT mention article counts, technical scores, or system implementation details. Write as if speaking directly to investors.",
-    "emerging_trends": ["trend1", "trend2"],
+    "market_implications": "2-3 paragraph summary written for investors: What happened today? What does it mean for long-term investors? What should they watch? Write in clear, accessible language.",
     "confidence": float (0-1),
     "finding_type": "market_news_analysis"
 }
 
-IMPORTANT: In 'market_implications', write natural language analysis without exposing technical details (e.g., don't say "across 20 articles" or mention sentiment scores). Focus on what matters to investors.
+Example market_implications (good):
+"Major tech companies reported strong earnings this quarter, highlighting resilient consumer demand for AI-enabled products. This reinforces the long-term growth narrative for the sector. Federal Reserve commentary suggested patience on rate cuts, which favors quality companies with strong balance sheets. Investors should monitor upcoming inflation data and corporate guidance for Q4, as these will shape the investment landscape heading into 2026."
+
+Example market_implications (bad):
+"Across 15 articles with an average sentiment of 0.68, markets may see a short-term rally. The S&P 500 is up 1.2% today. RSI indicates oversold conditions."
 """
         
         super().__init__(agent_id, "market_news", specialized_prompt)
@@ -82,20 +81,19 @@ IMPORTANT: In 'market_implications', write natural language analysis without exp
             
             # Analyze news with context
             task_description = (
-                "Analyze the market impact of TODAY'S recent news events in detail. "
-                "Focus on specific articles, identify significant developments, assess sector impacts, and determine market implications. "
-                "Reference specific headlines, companies, and data points from today's news flow. "
+                "Summarize today's key market news for long-term investors:\n\n"
+                "1. What are the major events? (Specific companies, sectors, policy changes)\n"
+                "2. What does this mean for the 6-12 month outlook? (Not short-term rallies)\n"
+                "3. Which long-term themes or trends does this reinforce or challenge?\n"
+                "4. What should investors watch going forward?\n\n"
+                "Write in clear, accessible language. Focus on substance, not sentiment scores or technical details."
             )
             
-            # Add historical context as supporting background (if available)
+            # Add historical context as brief background (if available)
             if historical_context and historical_context.get('historical_context'):
                 task_description += (
-                    f"\n\n[Background Context - past {historical_context.get('context_timeframe', '7 days')}]: "
-                    f"{historical_context['historical_context']} "
-                    f"(Themes: {', '.join(historical_context.get('persistent_themes', [])[:3])}; "
-                    f"Trend: {historical_context.get('sentiment_trend', 'stable')})\n\n"
-                    f"PRIMARY FOCUS: Analyze today's specific articles. Use the background context only to identify "
-                    f"if today's news represents a continuation, reversal, or new development."
+                    f"\n\n[Recent context for reference]: {historical_context['historical_context']}\n"
+                    f"Use this only to identify if today represents a continuation, reversal, or new development."
                 )
             
             news_analysis = await self.analyze_with_context(news_data, task_description)
