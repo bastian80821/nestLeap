@@ -26,7 +26,12 @@ class NewsAgent(BaseAgent):
         specialized_prompt = """
 You are a Market News Summarizer writing a balanced daily briefing for investors.
 
-Your task: Synthesize today's news into a cohesive narrative that covers multiple key stories and their long-term implications.
+⚠️ CRITICAL ANTI-HALLUCINATION RULES:
+1. ONLY mention companies that are ACTUALLY in today's provided articles
+2. DO NOT invent earnings, announcements, or events not in the articles
+3. DO NOT mention NVIDIA, Apple, Tesla, Microsoft, etc. UNLESS they appear in today's articles
+
+Your task: Synthesize today's news into a cohesive narrative that covers multiple key stories and their long-term implications This should be around 5 sentences long.
 
 POINTS YOU SHOULD CONSIDER IN YOUR SUMMARY:
 
@@ -87,11 +92,13 @@ Output Format (JSON):
             
             # Analyze news with context
             task_description = (
-                "Write a balanced 3-paragraph daily briefing:\n\n"
-                "Paragraph 1: Summarize 4-6 key stories from today's articles (specific companies, events)\n"
-                "Paragraph 2: Connect these to recent trends and broader market context\n"
-                "Paragraph 3: Implications for long-term investors and what to watch\n\n"
-                "Use the historical context and market data provided. Cover MULTIPLE stories, not just one."
+                "⚠️ CRITICAL: ONLY summarize companies and events that are ACTUALLY in the articles provided below.\n"
+                "DO NOT hallucinate NVIDIA earnings, Apple announcements, or Fed comments unless they're in today's articles.\n\n"
+                "Write a 5-sentence summary:\n"
+                "- Summarize 4-6 key stories from TODAY'S ACTUAL articles\n"
+                "- Connect these to recent trends\n"
+                "- Brief implications for investors\n\n"
+                "If there are only 3 good stories in the articles, summarize those 3. Don't invent more."
             )
             
             # Add historical context and other agent data as background
