@@ -2242,6 +2242,52 @@ async def get_current_batch():
         return {'status': 'error', 'error': str(e)}
 
 
+@app.get("/api/debug/opportunity-scan-status", dependencies=[Depends(verify_admin_key)])
+async def debug_opportunity_scan():
+    """Debug endpoint to check why opportunities aren't being created"""
+    try:
+        from .models import StockAnalysis, StockOpportunity
+        
+        db = SessionLocal()
+        try:
+            # Count total analyses
+            total_analyses = db.query(StockAnalysis).count()
+            
+            # Sample 5 analyses to check their structure
+            sample_analyses = db.query(StockAnalysis).order_by(
+                StockAnalysis.analysis_date.desc()
+            ).limit(5).all()
+            
+            sample_data = []
+            for analysis in sample_analyses:
+                fundamentals = analysis.fundamentals_outlook or {}
+                sample_data.append({
+                    'ticker': analysis.ticker,
+                    'has_fundamentals_outlook': analysis.fundamentals_outlook is not None,
+                    'has_buy_below': 'buy_below' in fundamentals,
+                    'has_sell_above': 'sell_above' in fundamentals,
+                    'has_fair_value': 'fair_value_price' in fundamentals,
+                    'buy_below_value': fundamentals.get('buy_below'),
+                    'sell_above_value': fundamentals.get('sell_above'),
+                    'fair_value': fundamentals.get('fair_value_price'),
+                })
+            
+            # Count opportunities
+            total_opportunities = db.query(StockOpportunity).count()
+            
+            return {
+                'total_analyses': total_analyses,
+                'total_opportunities': total_opportunities,
+                'sample_analyses': sample_data,
+                'diagnosis': 'Check if sample_analyses have the required fields'
+            }
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Error in debug endpoint: {e}")
+        return {'error': str(e)}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000) 
