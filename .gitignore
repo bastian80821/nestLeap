@@ -1,38 +1,29 @@
-# Node
-node_modules/
-frontend/app/node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.next/
+# Secrets
 .env
 .env.local
 .env.*.local
+backend/.env
+
+# Node
+node_modules/
+.next/
+npm-debug.log*
 
 # Python
 __pycache__/
 *.py[cod]
-*.sqlite3
-*.db
-*.pkl
-.Python
-env/
-venv/
-ENV/
-.venv
 *.egg-info/
-.mypy_cache/
-.pytest_cache/
-.coverage
+.venv/
+venv/
+env/
 
-# Docker
-*.pid
+# Database
+*.db
+*.sqlite3
 
-# VSCode
-.vscode/
-
-# Mac
+# OS
 .DS_Store
 
-# Alembic
-backend/app/market_data.db
+# IDE
+.vscode/
+.idea/

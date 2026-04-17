@@ -1,29 +1,23 @@
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, DeclarativeBase
+
 from .config import settings
 
-# Create database engine with larger connection pool for concurrent batch analysis
-engine = create_engine(
-    settings.database_url,
-    pool_pre_ping=True,
-    pool_recycle=3600,
-    pool_size=20,  # Increased from default 5 to handle 15 concurrent analyses
-    max_overflow=30,  # Increased from default 10 for peak load
-    pool_timeout=60,  # Increased timeout to 60 seconds
-    echo=settings.debug
-)
+connect_args = {}
+if settings.database_url.startswith("sqlite"):
+    connect_args["check_same_thread"] = False
 
-# Create session factory
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+engine = create_engine(settings.database_url, connect_args=connect_args)
+SessionLocal = sessionmaker(bind=engine)
 
-# Create base class for models
-Base = declarative_base()
 
-# Dependency to get database session
+class Base(DeclarativeBase):
+    pass
+
+
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
-        db.close() 
+        db.close()

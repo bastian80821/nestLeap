@@ -2,164 +2,48 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
-:root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
-  
-  /* Toast variables for light mode */
-  --toast-bg: #fff;
-  --toast-color: #374151;
-  --toast-border: #e5e7eb;
-  --toast-success-bg: #f0fdf4;
-  --toast-success-color: #15803d;
-  --toast-success-border: #bbf7d0;
-  --toast-error-bg: #fef2f2;
-  --toast-error-color: #dc2626;
-  --toast-error-border: #fecaca;
-}
-
-.dark {
-  /* Toast variables for OLED dark mode */
-  --toast-bg: #111111;
-  --toast-color: #f9fafb;
-  --toast-border: #333333;
-  --toast-success-bg: #064e3b;
-  --toast-success-color: #6ee7b7;
-  --toast-success-border: #065f46;
-  --toast-error-bg: #7f1d1d;
-  --toast-error-color: #fca5a5;
-  --toast-error-border: #991b1b;
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8f9fa;
+    --bg-tertiary: #f1f3f5;
+    --border: #e2e5e9;
+    --text-primary: #1a1d21;
+    --text-secondary: #5a6069;
+    --text-tertiary: #8b919a;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --positive: #16a34a;
+    --positive-bg: #f0fdf4;
+    --negative: #dc2626;
+    --negative-bg: #fef2f2;
+    --warning: #d97706;
+    --warning-bg: #fffbeb;
+  }
+
+  .dark {
+    --bg-primary: #0b0e11;
+    --bg-secondary: #141820;
+    --bg-tertiary: #1c2230;
+    --border: #2a3040;
+    --text-primary: #e8eaed;
+    --text-secondary: #9aa0ab;
+    --text-tertiary: #5f6670;
+    --accent: #3b82f6;
+    --accent-hover: #60a5fa;
+    --positive: #4ade80;
+    --positive-bg: rgba(74, 222, 128, 0.08);
+    --negative: #f87171;
+    --negative-bg: rgba(248, 113, 113, 0.08);
+    --warning: #fbbf24;
+    --warning-bg: rgba(251, 191, 36, 0.08);
+  }
+
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
-
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-}
-
-html,
-body {
-  max-width: 100vw;
-  overflow-x: hidden;
-}
-
-body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
-}
-
-/* Custom scrollbar for light mode */
-::-webkit-scrollbar {
-  width: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #a8a8a8;
-}
-
-/* Custom scrollbar for OLED dark mode */
-.dark ::-webkit-scrollbar-track {
-  background: #111111;
-}
-
-.dark ::-webkit-scrollbar-thumb {
-  background: #333333;
-}
-
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: #555555;
-}
-
-/* Custom components */
-@layer components {
-  .btn-primary {
-    @apply bg-primary-600 hover:bg-primary-700 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200;
-  }
-  
-  .btn-secondary {
-    @apply bg-neutral-200 hover:bg-neutral-300 dark:bg-black-600 dark:hover:bg-black-500 text-neutral-800 dark:text-neutral-200 font-medium px-4 py-2 rounded-lg transition-colors duration-200;
-  }
-  
-  .card {
-    @apply bg-white dark:bg-black-700 rounded-xl shadow-sm border border-neutral-200 dark:border-black-500 p-6;
-  }
-  
-  .badge-buy {
-    @apply bg-success-100 dark:bg-success-900 text-success-700 dark:text-success-400 px-3 py-1 rounded-full text-sm font-medium;
-  }
-  
-  .badge-hold {
-    @apply bg-warning-100 dark:bg-warning-900 text-warning-700 dark:text-warning-400 px-3 py-1 rounded-full text-sm font-medium;
-  }
-  
-  .badge-sell {
-    @apply bg-danger-100 dark:bg-danger-900 text-danger-700 dark:text-danger-400 px-3 py-1 rounded-full text-sm font-medium;
-  }
-  
-  .input {
-    @apply w-full px-4 py-2 border border-neutral-300 dark:border-black-500 dark:bg-black-700 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all duration-200;
-  }
-  
-  .loading-spinner {
-    @apply animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600;
-  }
-}
-
-/* Animation utilities */
-@layer utilities {
-  .animate-fade-in {
-    animation: fadeIn 0.5s ease-in-out;
-  }
-  
-  .animate-slide-up {
-    animation: slideUp 0.3s ease-out;
-  }
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-} 
