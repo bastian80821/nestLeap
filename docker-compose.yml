@@ -11,9 +11,10 @@ services:
       - ADMIN_KEY=${ADMIN_KEY}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
-      interval: 30s
+      interval: 15s
       timeout: 10s
-      retries: 3
+      start_period: 60s
+      retries: 5
 
   frontend:
     build:
