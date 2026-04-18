@@ -1,4 +1,4 @@
-nestleap.tech, www.nestleap.tech {
+nestleap.au, www.nestleap.au {
     handle /api/* {
         reverse_proxy backend:8000
     }
