@@ -1,0 +1,19 @@
+{
+  "name": "nestleap-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Capacitor wrapper that bundles the NestLeap web frontend as a native iOS app.",
+  "scripts": {
+    "sync": "cap sync",
+    "open:ios": "cap open ios",
+    "build": "cd ../frontend && BUILD_TARGET=mobile NEXT_PUBLIC_API_URL=https://nestleap.au npm run build && cd ../mobile && cap sync ios"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/ios": "^6.1.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2",
+    "typescript": "^6.0.3"
+  }
+}
