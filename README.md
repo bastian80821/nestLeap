@@ -1,78 +1,93 @@
 # NestLeap
 
-Stock analysis platform for long-term investors. Analyzes ~200 large-cap stocks weekly using fundamentals data from Yahoo Finance and AI-generated insights via Google Gemini. Runs a simulated DCA portfolio that buys the top undervalued picks and benchmarks against the S&P 500.
+Long-term stock analysis platform. Scores ~200 large-cap US stocks weekly using
+Yahoo Finance fundamentals plus a Gemini-generated narrative, then runs a
+simulated DCA portfolio that buys the top picks and benchmarks against the S&P 500.
 
-## What it does
+Live: **[nestleap.au](https://nestleap.au)** — read-only for the public; write
+endpoints require an admin key.
 
-- **Weekly batch analysis** of the top 200 US stocks by market cap
-- **Deterministic scoring** across quality, value, growth, and momentum metrics
-- **AI synthesis** via Gemini — generates fair value estimates, risk/catalyst assessment, and an overall score that adjusts the deterministic baseline
-- **Daily market summary** with index data and news context
-- **Simulated portfolio** — $1,000/week DCA into the top 10 undervalued stocks, sells positions at fair value or overvalued, tracks performance vs S&P 500
-- **Admin panel** at `/admin` for triggering batch runs, rebalancing, and individual stock analysis
+> The portfolio is **simulated** ($1,000/week paper DCA). The project does not
+> place real trades and is not investment advice.
+
+## Notable design decisions
+
+- **Deterministic scoring + bounded LLM adjustment.** Sixteen sub-scores
+  (quality, value, growth, momentum) are computed from raw fundamentals before
+  any LLM call. Gemini then synthesises a narrative and may shift the overall
+  score within a capped range — it can't invent a fair value out of thin air.
+- **One Gemini call per stock.** Earlier iterations used a multi-agent setup
+  (separate calls for news, fundamentals, valuation). Folding everything into a
+  single prompt with structured output cut cost and latency ~5×.
+- **SQLite, deliberately.** Working set is ~5 MB; query plans never matter at
+  this scale. Avoids the operational tax of a separate database container.
+- **Static frontend, single backend.** Both the web app and iOS app ship the
+  same Next.js bundle. The FastAPI backend is the only component holding
+  credentials.
+
+## Stack
+
+| Layer            | Tech                                                  |
+|------------------|-------------------------------------------------------|
+| Web frontend     | Next.js 14 (App Router), Tailwind, TypeScript         |
+| iOS app          | Capacitor wrapping the static export of the web app   |
+| Backend          | FastAPI, SQLAlchemy, SQLite                           |
+| Data             | `yfinance`, RSS news scrapers                         |
+| AI               | Google Gemini                                         |
+| Infrastructure   | Docker Compose, Caddy (auto-HTTPS), single VPS        |
 
 ## Architecture
 
 ```
-frontend/          Next.js 14, Tailwind CSS, single-page app
-backend/           FastAPI, SQLAlchemy, SQLite
-  app/
-    collectors/    Yahoo Finance data + news
-    analysis/      Scoring engine, Gemini integration, batch runner, portfolio engine
-    main.py        API endpoints (public + admin)
+frontend/        Next.js — single-page client, read-only for users
+mobile/          Capacitor wrapper + Xcode project for iOS
+backend/
+  collectors/    yfinance + news scraping
+  analysis/      Scoring engine, Gemini integration, batch + portfolio
+  main.py        REST API (public + admin behind X-Admin-Key)
+scripts/         Cron jobs (weekly batch, daily market summary, iOS build)
 ```
 
-The backend collects fundamentals via `yfinance`, computes deterministic sub-scores (16 metrics), then makes a single Gemini API call per stock to synthesize everything into a valuation, fair value estimate, and adjusted overall score. Results are stored in SQLite.
+The same Next.js app builds two ways:
 
-The frontend is read-only for users. All write operations (batch analysis, re-analysis, rebalance) require an admin key passed via `X-Admin-Key` header.
+- `npm run build` → `output: standalone`, served by Docker.
+- `BUILD_TARGET=mobile npm run build` → `output: export`, bundled into the
+  Capacitor iOS project.
 
-## Running locally
+Both call the same backend over HTTPS.
+
+## Run locally
 
 ```bash
 # Backend
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example ../.env  # edit with your Gemini key
+cp ../.env.example ../.env        # fill in GEMINI_API_KEY
 uvicorn app.main:app --reload --port 8000
 
 # Frontend
 cd frontend
-npm install
-npm run dev
+npm install && npm run dev
 ```
 
-## Deploying
-
-The project ships with Docker Compose + Caddy for deployment on any VPS.
+## Deploy
 
 ```bash
-cp .env.example .env   # fill in GEMINI_API_KEY, ADMIN_KEY, DOMAIN
+cp .env.example .env              # GEMINI_API_KEY, ADMIN_KEY, DOMAIN
 docker compose up -d --build
 ```
 
-Caddy handles HTTPS automatically via Let's Encrypt.
+Caddy provisions Let's Encrypt certificates automatically. The app does not run
+its own scheduler — two host cron jobs drive the weekly batch and daily
+market summary; see `scripts/weekly-batch.sh` and `scripts/daily-market-summary.sh`
+for the exact crontab entries.
 
-### Scheduled jobs (on the VPS)
-
-The app does not start cron by itself. Use `crontab -e` on the server with your **public URL** and **`ADMIN_KEY`** from `.env` (same key as `/admin`).
+## iOS build
 
 ```bash
-chmod +x scripts/weekly-batch.sh scripts/daily-market-summary.sh
+./scripts/build-ios.sh            # static-export the frontend, sync to Xcode
+open mobile/ios/App/App.xcworkspace
 ```
 
-**Every Sunday 02:00** — full batch (~200 stocks). Portfolio rebalances automatically when the batch finishes; the script then refreshes the market summary.
-
-```
-0 2 * * 0 cd /root/stock_platform && API_URL=https://nestleap.au ADMIN_KEY=your_admin_key ./scripts/weekly-batch.sh >> /var/log/nestleap-weekly.log 2>&1
-```
-
-**Every day 06:15** — new AI market summary (change the time if you like).
-
-```
-15 6 * * * cd /root/stock_platform && API_URL=https://nestleap.au ADMIN_KEY=your_admin_key ./scripts/daily-market-summary.sh >> /var/log/nestleap-market.log 2>&1
-```
-
-Replace `nestleap.au` if your domain differs. Times use the **server’s** timezone (`timedatectl` to check).
-
-See `.env.example` for required environment variables.
+Requires full Xcode and an Apple Developer account for device deployment.
