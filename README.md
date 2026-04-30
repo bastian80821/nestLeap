@@ -5,7 +5,9 @@ Yahoo Finance fundamentals plus a Gemini-generated narrative, then runs a
 simulated DCA portfolio that buys the top picks and benchmarks against the S&P 500.
 
 Live: **[nestleap.au](https://nestleap.au)** — read-only for the public; write
-endpoints require an admin key.
+endpoints require an admin key. An **iOS app** is currently in progress: a
+Capacitor wrapper around the same Next.js bundle, runs in the simulator
+against the live backend, not yet submitted to the App Store.
 
 > The portfolio is **simulated** ($1,000/week paper DCA). The project does not
 > place real trades and is not investment advice.
@@ -21,16 +23,16 @@ endpoints require an admin key.
   single prompt with structured output cut cost and latency ~5×.
 - **SQLite, deliberately.** Working set is ~5 MB; query plans never matter at
   this scale. Avoids the operational tax of a separate database container.
-- **Static frontend, single backend.** Both the web app and iOS app ship the
-  same Next.js bundle. The FastAPI backend is the only component holding
-  credentials.
+- **Static frontend, single backend.** The web app and the in-progress iOS
+  app ship the same Next.js bundle; the FastAPI backend is the only component
+  holding credentials.
 
 ## Stack
 
 | Layer            | Tech                                                  |
 |------------------|-------------------------------------------------------|
 | Web frontend     | Next.js 14 (App Router), Tailwind, TypeScript         |
-| iOS app          | Capacitor wrapping the static export of the web app   |
+| iOS app *(WIP)*  | Capacitor wrapping the static export of the web app   |
 | Backend          | FastAPI, SQLAlchemy, SQLite                           |
 | Data             | `yfinance`, RSS news scrapers                         |
 | AI               | Google Gemini                                         |
@@ -83,11 +85,14 @@ its own scheduler — two host cron jobs drive the weekly batch and daily
 market summary; see `scripts/weekly-batch.sh` and `scripts/daily-market-summary.sh`
 for the exact crontab entries.
 
-## iOS build
+## iOS build *(in progress)*
 
 ```bash
 ./scripts/build-ios.sh            # static-export the frontend, sync to Xcode
 open mobile/ios/App/App.xcworkspace
 ```
 
-Requires full Xcode and an Apple Developer account for device deployment.
+Runs in the iOS Simulator today. Device deployment and App Store submission
+need full Xcode plus an Apple Developer account; native polish (push
+notifications, app icon, splash, hiding `/admin` from the bundle) is still
+on the to-do list.
