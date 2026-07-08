@@ -104,6 +104,7 @@ export interface PortfolioData {
   gain_loss_pct: number;
   sp500_value: number;
   sp500_gain_pct: number;
+  total_realized_gains: number;
   num_holdings: number;
   positions: PortfolioPosition[];
   trades: PortfolioTrade[];

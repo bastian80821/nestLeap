@@ -141,6 +141,7 @@ class PortfolioResponse(BaseModel):
     gain_loss_pct: float
     sp500_value: float
     sp500_gain_pct: float
+    total_realized_gains: float
     num_holdings: int
     positions: list[PortfolioPosition]
     trades: list[PortfolioTradeResponse]

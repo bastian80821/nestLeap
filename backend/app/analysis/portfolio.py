@@ -332,6 +332,7 @@ def get_portfolio_state(db: Session) -> dict:
     sp500_gain_pct = (sp500_gain / total_invested * 100) if total_invested > 0 else 0
 
     realized = _compute_realized_pnl(db)
+    total_realized_gains = round(sum(r["realized_pnl"] for r in realized.values()), 2)
     trades = (
         db.query(PortfolioTrade)
         .order_by(PortfolioTrade.created_at.desc(), PortfolioTrade.id.desc())
@@ -347,6 +348,7 @@ def get_portfolio_state(db: Session) -> dict:
         "gain_loss_pct": round(gain_loss_pct, 2),
         "sp500_value": round(sp500_value, 2),
         "sp500_gain_pct": round(sp500_gain_pct, 2),
+        "total_realized_gains": total_realized_gains,
         "num_holdings": len(positions),
         "positions": positions,
         "trades": [

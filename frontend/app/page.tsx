@@ -444,7 +444,17 @@ function PortfolioView() {
         <Card className="text-center">
           <p className="text-xs text-txt-tertiary mb-1">Portfolio Value</p>
           <p className="text-xl font-semibold text-txt-primary tabular-nums">${fmt(data.total_value)}</p>
-          <p className="text-xs text-txt-tertiary mt-0.5 tabular-nums">${fmt(data.cash)} cash</p>
+          <p className="text-xs text-txt-tertiary mt-0.5 tabular-nums">
+            ${fmt(data.cash)} cash
+            {data.total_realized_gains !== 0 && (
+              <>
+                <span className="text-txt-tertiary"> · </span>
+                <span className={data.total_realized_gains >= 0 ? "text-positive" : "text-negative"}>
+                  {data.total_realized_gains >= 0 ? "+" : ""}${fmt(data.total_realized_gains)} realized
+                </span>
+              </>
+            )}
+          </p>
         </Card>
         <Card className="text-center">
           <p className="text-xs text-txt-tertiary mb-1">AI Return</p>
@@ -548,34 +558,99 @@ function PortfolioView() {
   );
 }
 
+function niceStep(rawStep: number): number {
+  if (rawStep <= 0) return 1;
+  const pow = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const norm = rawStep / pow;
+  const nice = norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10;
+  return nice * pow;
+}
+
 function PerformanceChart({ data }: { data: PortfolioHistoryPoint[] }) {
   if (data.length < 2) return null;
 
-  const allValues = data.flatMap((d) => [d.portfolio, d.sp500, d.invested]);
-  const min = Math.min(...allValues) * 0.95;
-  const max = Math.max(...allValues) * 1.05;
+  // Cumulative return over amount invested. Both series start at 0% and diverge.
+  const points = data.map((d) => ({
+    date: d.date,
+    portfolio: d.invested > 0 ? ((d.portfolio - d.invested) / d.invested) * 100 : 0,
+    sp500: d.invested > 0 ? ((d.sp500 - d.invested) / d.invested) * 100 : 0,
+  }));
+
+  const allValues = points.flatMap((p) => [p.portfolio, p.sp500, 0]);
+  const rawMin = Math.min(...allValues);
+  const rawMax = Math.max(...allValues);
+  // Add ~15% headroom on each side, minimum 2 pp so a flat series still has vertical space.
+  const pad = Math.max((rawMax - rawMin) * 0.15, 2);
+  const min = rawMin - pad;
+  const max = rawMax + pad;
   const range = max - min || 1;
 
   const w = 600;
-  const h = 200;
-  const toX = (i: number) => (i / (data.length - 1)) * w;
-  const toY = (v: number) => h - ((v - min) / range) * h;
+  const h = 220;
+  const padL = 42;
+  const padR = 48;
+  const padT = 8;
+  const padB = 22;
+  const innerW = w - padL - padR;
+  const innerH = h - padT - padB;
 
-  const portfolioPath = data.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i)},${toY(d.portfolio)}`).join(" ");
-  const sp500Path = data.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i)},${toY(d.sp500)}`).join(" ");
-  const investedPath = data.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i)},${toY(d.invested)}`).join(" ");
+  const toX = (i: number) => padL + (i / (points.length - 1)) * innerW;
+  const toY = (v: number) => padT + innerH - ((v - min) / range) * innerH;
+
+  const portfolioPath = points.map((p, i) => `${i === 0 ? "M" : "L"}${toX(i)},${toY(p.portfolio)}`).join(" ");
+  const sp500Path = points.map((p, i) => `${i === 0 ? "M" : "L"}${toX(i)},${toY(p.sp500)}`).join(" ");
+
+  // Y-axis gridlines at 4 evenly spaced values including 0 if in range.
+  const step = niceStep(range / 4);
+  const gridValues: number[] = [];
+  const start = Math.ceil(min / step) * step;
+  for (let v = start; v <= max; v += step) gridValues.push(v);
+
+  const last = points[points.length - 1];
+  const first = points[0];
+  const firstLabel = first.date.slice(5);
+  const lastLabel = last.date.slice(5);
 
   return (
-    <div className="w-full overflow-x-auto">
-      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-48" preserveAspectRatio="none">
-        <path d={investedPath} fill="none" stroke="var(--text-tertiary)" strokeWidth="1" strokeDasharray="4 3" opacity="0.4" />
-        <path d={sp500Path} fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" opacity="0.6" />
+    <div className="w-full">
+      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-56">
+        {gridValues.map((v) => (
+          <g key={v}>
+            <line
+              x1={padL}
+              x2={w - padR}
+              y1={toY(v)}
+              y2={toY(v)}
+              stroke="var(--border)"
+              strokeWidth={v === 0 ? 1.2 : 0.5}
+              strokeDasharray={v === 0 ? undefined : "3 3"}
+              opacity={v === 0 ? 0.9 : 0.5}
+            />
+            <text x={padL - 6} y={toY(v) + 3} textAnchor="end" fontSize="10" fill="var(--text-tertiary)">
+              {v > 0 ? "+" : ""}{v.toFixed(step < 1 ? 1 : 0)}%
+            </text>
+          </g>
+        ))}
+
+        <path d={sp500Path} fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" opacity="0.7" />
         <path d={portfolioPath} fill="none" stroke="var(--accent)" strokeWidth="2" />
+
+        {/* endpoint value labels */}
+        <text x={w - padR + 4} y={toY(last.portfolio) + 3} fontSize="10" fill="var(--accent)" fontWeight="600">
+          {last.portfolio >= 0 ? "+" : ""}{last.portfolio.toFixed(2)}%
+        </text>
+        <text x={w - padR + 4} y={toY(last.sp500) + 3} fontSize="10" fill="var(--text-tertiary)">
+          {last.sp500 >= 0 ? "+" : ""}{last.sp500.toFixed(2)}%
+        </text>
+
+        {/* x-axis endpoint dates */}
+        <text x={padL} y={h - 4} fontSize="10" fill="var(--text-tertiary)">{firstLabel}</text>
+        <text x={w - padR} y={h - 4} textAnchor="end" fontSize="10" fill="var(--text-tertiary)">{lastLabel}</text>
       </svg>
       <div className="flex gap-5 mt-2 text-xs text-txt-tertiary">
         <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-accent inline-block rounded" /> AI Portfolio</span>
-        <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-txt-tertiary inline-block rounded opacity-60" /> S&P 500</span>
-        <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-txt-tertiary inline-block rounded opacity-40" style={{ borderTop: "1px dashed" }} /> Invested</span>
+        <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-txt-tertiary inline-block rounded opacity-70" /> S&P 500</span>
+        <span className="text-txt-tertiary">Cumulative return vs invested</span>
       </div>
     </div>
   );
