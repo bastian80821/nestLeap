@@ -516,22 +516,31 @@ function PortfolioView() {
 
       {data.trades.length > 0 && (
         <div>
-          <SectionLabel>Recent Trades</SectionLabel>
-          <Card className="p-0 overflow-hidden divide-y divide-border">
-            {data.trades.map((t, i) => (
-              <div key={i} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
-                  t.action === "buy"
-                    ? "bg-positive-bg text-positive"
-                    : "bg-negative-bg text-negative"
-                }`}>
-                  {t.action.toUpperCase()}
-                </span>
-                <span className="font-medium text-txt-primary">{t.ticker}</span>
-                <span className="text-txt-secondary tabular-nums">{t.shares.toFixed(2)} @ ${t.price.toFixed(2)}</span>
-                <span className="text-txt-tertiary ml-auto text-xs">{t.reason}</span>
-              </div>
-            ))}
+          <SectionLabel>Trade History ({data.trades.length})</SectionLabel>
+          <Card className="p-0 overflow-hidden">
+            <div className="max-h-[520px] overflow-y-auto divide-y divide-border">
+              {data.trades.map((t, i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                    t.action === "buy"
+                      ? "bg-positive-bg text-positive"
+                      : "bg-negative-bg text-negative"
+                  }`}>
+                    {t.action.toUpperCase()}
+                  </span>
+                  <span className="font-medium text-txt-primary">{t.ticker}</span>
+                  <span className="text-txt-secondary tabular-nums">{t.shares.toFixed(2)} @ ${t.price.toFixed(2)}</span>
+                  {t.action === "sell" && t.realized_pnl !== null && t.realized_pnl_pct !== null && (
+                    <span className={`text-xs font-medium tabular-nums ${
+                      t.realized_pnl >= 0 ? "text-positive" : "text-negative"
+                    }`}>
+                      {t.realized_pnl >= 0 ? "+" : ""}${fmt(t.realized_pnl)} ({t.realized_pnl >= 0 ? "+" : ""}{t.realized_pnl_pct.toFixed(1)}%)
+                    </span>
+                  )}
+                  <span className="text-txt-tertiary ml-auto text-xs">{t.reason}</span>
+                </div>
+              ))}
+            </div>
           </Card>
         </div>
       )}

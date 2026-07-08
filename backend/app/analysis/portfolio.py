@@ -128,6 +128,36 @@ def _get_cash(db: Session) -> float:
     )
 
 
+def _compute_realized_pnl(db: Session) -> dict[int, dict]:
+    """Replay trade history chronologically to compute realized P&L per sell."""
+    trades = (
+        db.query(PortfolioTrade)
+        .order_by(PortfolioTrade.created_at.asc(), PortfolioTrade.id.asc())
+        .all()
+    )
+    positions: dict[str, dict] = {}
+    realized: dict[int, dict] = {}
+    for t in trades:
+        pos = positions.setdefault(t.ticker, {"shares": 0.0, "avg_cost": 0.0})
+        if t.action == "buy":
+            new_shares = pos["shares"] + t.shares
+            if new_shares > 0:
+                pos["avg_cost"] = (pos["avg_cost"] * pos["shares"] + t.total) / new_shares
+            pos["shares"] = new_shares
+        elif t.action == "sell":
+            cost_basis = pos["avg_cost"] * t.shares
+            pnl = t.total - cost_basis
+            realized[t.id] = {
+                "realized_pnl": round(pnl, 2),
+                "realized_pnl_pct": round(pnl / cost_basis * 100, 2) if cost_basis > 0 else 0.0,
+            }
+            pos["shares"] -= t.shares
+            if pos["shares"] <= 0.001:
+                pos["shares"] = 0.0
+                pos["avg_cost"] = 0.0
+    return realized
+
+
 def _get_latest_analyses(db: Session) -> dict[str, StockAnalysis]:
     subq = (
         db.query(StockAnalysis.ticker, func.max(StockAnalysis.id).label("max_id"))
@@ -301,10 +331,10 @@ def get_portfolio_state(db: Session) -> dict:
     sp500_gain = sp500_value - total_invested if total_invested > 0 else 0
     sp500_gain_pct = (sp500_gain / total_invested * 100) if total_invested > 0 else 0
 
+    realized = _compute_realized_pnl(db)
     trades = (
         db.query(PortfolioTrade)
-        .order_by(PortfolioTrade.created_at.desc())
-        .limit(50)
+        .order_by(PortfolioTrade.created_at.desc(), PortfolioTrade.id.desc())
         .all()
     )
 
@@ -328,6 +358,8 @@ def get_portfolio_state(db: Session) -> dict:
                 "total": round(t.total, 2),
                 "reason": t.reason,
                 "date": t.created_at.isoformat() if t.created_at else None,
+                "realized_pnl": realized.get(t.id, {}).get("realized_pnl"),
+                "realized_pnl_pct": realized.get(t.id, {}).get("realized_pnl_pct"),
             }
             for t in trades
         ],

@@ -128,6 +128,8 @@ class PortfolioTradeResponse(BaseModel):
     total: float
     reason: str | None = None
     date: str | None = None
+    realized_pnl: float | None = None
+    realized_pnl_pct: float | None = None
 
 
 class PortfolioResponse(BaseModel):

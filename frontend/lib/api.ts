@@ -91,6 +91,8 @@ export interface PortfolioTrade {
   total: number;
   reason: string | null;
   date: string | null;
+  realized_pnl: number | null;
+  realized_pnl_pct: number | null;
 }
 
 export interface PortfolioData {
