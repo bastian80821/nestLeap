@@ -478,12 +478,28 @@ function PortfolioView() {
         </Card>
       </div>
 
-      {history.length > 1 && (
-        <Card>
-          <SectionLabel>Performance vs S&P 500</SectionLabel>
-          <PerformanceChart data={history} />
-        </Card>
-      )}
+      {history.length > 1 && (() => {
+        const today = new Date().toISOString().slice(0, 10);
+        const lastSnapDate = history[history.length - 1]?.date;
+        const chartData =
+          lastSnapDate && lastSnapDate < today
+            ? [
+                ...history,
+                {
+                  date: today,
+                  portfolio: data.total_value,
+                  sp500: data.sp500_value,
+                  invested: data.total_invested,
+                },
+              ]
+            : history;
+        return (
+          <Card>
+            <SectionLabel>Performance vs S&P 500</SectionLabel>
+            <PerformanceChart data={chartData} />
+          </Card>
+        );
+      })()}
 
       {data.positions.length > 0 && (
         <div>
