@@ -444,17 +444,14 @@ function PortfolioView() {
         <Card className="text-center">
           <p className="text-xs text-txt-tertiary mb-1">Portfolio Value</p>
           <p className="text-xl font-semibold text-txt-primary tabular-nums">${fmt(data.total_value)}</p>
-          <p className="text-xs text-txt-tertiary mt-0.5 tabular-nums">
-            ${fmt(data.cash)} cash
-            {data.total_realized_gains !== 0 && (
-              <>
-                <span className="text-txt-tertiary"> · </span>
-                <span className={data.total_realized_gains >= 0 ? "text-positive" : "text-negative"}>
-                  {data.total_realized_gains >= 0 ? "+" : ""}${fmt(data.total_realized_gains)} realized
-                </span>
-              </>
-            )}
-          </p>
+          <p className="text-xs text-txt-tertiary mt-0.5 tabular-nums whitespace-nowrap">${fmt(data.cash)} cash</p>
+          {data.total_realized_gains !== 0 && (
+            <p className={`text-xs mt-0.5 tabular-nums whitespace-nowrap ${
+              data.total_realized_gains >= 0 ? "text-positive" : "text-negative"
+            }`}>
+              {data.total_realized_gains >= 0 ? "+" : ""}${fmt(data.total_realized_gains)} realized
+            </p>
+          )}
         </Card>
         <Card className="text-center">
           <p className="text-xs text-txt-tertiary mb-1">AI Return</p>
@@ -650,7 +647,6 @@ function PerformanceChart({ data }: { data: PortfolioHistoryPoint[] }) {
       <div className="flex gap-5 mt-2 text-xs text-txt-tertiary">
         <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-accent inline-block rounded" /> AI Portfolio</span>
         <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-txt-tertiary inline-block rounded opacity-70" /> S&P 500</span>
-        <span className="text-txt-tertiary">Cumulative return vs invested</span>
       </div>
     </div>
   );
