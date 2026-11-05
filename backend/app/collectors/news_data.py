@@ -13,6 +13,7 @@ class NewsItem:
     source: str
     published: Optional[str] = None
     url: Optional[str] = None
+    summary: Optional[str] = None
 
 
 def get_stock_news(ticker: str, max_items: int = 8) -> list[NewsItem]:
@@ -55,6 +56,7 @@ def get_stock_news(ticker: str, max_items: int = 8) -> list[NewsItem]:
                 source=source or "Unknown",
                 published=str(pub_date) if pub_date else None,
                 url=url,
+                summary=content.get("summary") or content.get("description") or None,
             ))
     except Exception:
         pass

@@ -9,6 +9,25 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - DATABASE_URL=sqlite:////app/data/nestleap.db
       - ADMIN_KEY=${ADMIN_KEY}
+      - PORTFOLIO_STRATEGY=${PORTFOLIO_STRATEGY:-v2}
+      # Broker trading — see docs/ROLLOUT.md. Defaults keep trading off.
+      - TRADING_MODE=${TRADING_MODE:-off}
+      - TRADING_BROKER=${TRADING_BROKER:-sim}
+      - TRADING_APPROVAL=${TRADING_APPROVAL:-manual}
+      - TRADING_CURRENCY=${TRADING_CURRENCY:-EUR}
+      - TRADING_WEEKLY_NEW_MONEY=${TRADING_WEEKLY_NEW_MONEY:-400}
+      - TRADING_MAX_BUYS_PER_WEEK=${TRADING_MAX_BUYS_PER_WEEK:-2}
+      - TRADING_MAX_ORDER_VALUE=${TRADING_MAX_ORDER_VALUE:-2000}
+      - TRADING_MAX_WEEKLY_BUYS=${TRADING_MAX_WEEKLY_BUYS:-4000}
+      - TRADING_AUTO_FX=${TRADING_AUTO_FX:-true}
+      - TRADING_FX_MIN_CONVERSION=${TRADING_FX_MIN_CONVERSION:-1000}
+      - TRADING_FRACTIONAL=${TRADING_FRACTIONAL:-true}
+      - IB_FLEX_TOKEN=${IB_FLEX_TOKEN:-}
+      - IB_FLEX_QUERY_ID=${IB_FLEX_QUERY_ID:-}
+      - IB_HOST=ib-gateway
+      - IB_PORT=${IB_PORT:-4004}
+      - IB_ACCOUNT=${IB_ACCOUNT:-}
+      - NOTIFY_URL=${NOTIFY_URL:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 15s
@@ -40,7 +59,27 @@ services:
       - frontend
       - backend
 
+  # Interactive Brokers gateway (headless, auto-login via IBC). Only starts with
+  # `docker compose --profile ibkr up -d`. No ports are published: only the backend
+  # reaches it on the internal network (4004 = paper, 4003 = live).
+  ib-gateway:
+    image: ghcr.io/gnzsnz/ib-gateway:stable
+    profiles: ["ibkr"]
+    restart: unless-stopped
+    environment:
+      - TWS_USERID=${IB_USERNAME:-}
+      - TWS_PASSWORD=${IB_PASSWORD:-}
+      - TRADING_MODE=${IB_GATEWAY_MODE:-paper}
+      - READ_ONLY_API=no
+      - TWOFA_TIMEOUT_ACTION=restart
+      - AUTO_RESTART_TIME=11:59 PM
+      - RELOGIN_AFTER_TWOFA_TIMEOUT=yes
+      - TIME_ZONE=America/New_York
+    volumes:
+      - ib_settings:/home/ibgateway/Jts
+
 volumes:
   db_data:
   caddy_data:
   caddy_config:
+  ib_settings:

@@ -48,6 +48,7 @@ class StockAnalysisResponse(BaseModel):
     risks: list[str] | None = None
     catalysts: list[str] | None = None
     outlook: str | None = None
+    changes_since_last: str | None = None
 
     analyzed_at: datetime | None = None
 

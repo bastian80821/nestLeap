@@ -1,11 +1,17 @@
-fastapi
-uvicorn[standard]
-sqlalchemy
-yfinance
-google-genai
-feedparser
-httpx
-pydantic
-pydantic-settings
-python-dotenv
-aiosqlite
+# Pinned to versions verified together (Nov 2026). yfinance tracks Yahoo's API changes;
+# 1.5.x silently stopped returning news, so keep it current.
+fastapi~=0.162.0
+uvicorn[standard]~=0.54.0
+sqlalchemy~=2.1.8
+yfinance>=1.8.0
+google-genai~=2.34.0
+feedparser~=6.0.14
+httpx~=0.28.1
+pydantic~=2.14.2
+pydantic-settings~=2.16.2
+python-dotenv~=1.2.4
+aiosqlite~=0.22.1
+pandas~=3.1.1
+numpy~=2.5.4
+exchange_calendars~=4.13.2
+ib_async~=2.1.0

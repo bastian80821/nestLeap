@@ -1,0 +1,24 @@
+# NestLeap crontab (server time is UTC). Install with: crontab scripts/crontab.txt
+# The scripts read ADMIN_KEY from .env. Trading jobs are no-ops while TRADING_MODE=off.
+SHELL=/bin/bash
+NL=/root/stock_platform
+
+# Sunday 02:00: batch analysis -> portfolio rebalance -> market summary -> propose broker trades
+0 2 * * 0     cd $NL && API_URL=https://nestleap.au ./scripts/weekly-batch.sh >> /var/log/nestleap-weekly.log 2>&1
+# Daily market summary
+15 6 * * *    cd $NL && API_URL=https://nestleap.au ./scripts/daily-market-summary.sh >> /var/log/nestleap-market.log 2>&1
+
+# Submit approved orders: weekdays 15:00-18:30 UTC (10:00/11:00 New York onwards, DST-proof).
+# The app itself checks the NYSE calendar and skips holidays and the last 30 min of trading.
+0,30 15-18 * * 1-5  $NL/scripts/trading.sh submit >> /var/log/nestleap-trading.log 2>&1
+# Poll fills while the market is open; cancel unfilled orders at 19:45 UTC (before the close all year)
+10,40 15-19 * * 1-5 $NL/scripts/trading.sh sync >> /var/log/nestleap-trading.log 2>&1
+45 19 * * 1-5       $NL/scripts/trading.sh sync --eod >> /var/log/nestleap-trading.log 2>&1
+# Reconcile positions, executions and cash against the records (halts trading on any mismatch)
+0 22 * * 1-5        $NL/scripts/trading.sh reconcile >> /var/log/nestleap-trading.log 2>&1
+# Weekly audit of the week's run (Friday after reconcile) and monthly IBKR statement audit
+30 22 * * 5         $NL/scripts/trading.sh audit >> /var/log/nestleap-trading.log 2>&1
+0 6 2 * *           $NL/scripts/trading.sh audit-statement >> /var/log/nestleap-trading.log 2>&1
+
+# Daily database backup
+0 3 * * *     $NL/scripts/backup-db.sh >> /var/log/nestleap-backup.log 2>&1

@@ -80,6 +80,23 @@ cp .env.example .env              # GEMINI_API_KEY, ADMIN_KEY, DOMAIN
 docker compose up -d --build
 ```
 
+On the production server, `./scripts/deploy.sh` backs up the database, fast-forwards to
+`main`, rebuilds and waits for health. The full schedule is in `scripts/crontab.txt`.
+
+## Strategy, backtests and broker trading
+
+- `backend/app/analysis/strategy.py` — portfolio rules as pure functions, shared by the
+  website portfolio, the backtester and broker trading.
+- `backend/app/backtest/` — replay of the stored Gemini analyses, stress tests and synthetic
+  markets, prompt A/B summaries, and a dry-run trade preview (see its README).
+- `backend/app/trading/` — weekly broker execution (propose → approve → submit → sync →
+  reconcile) with a simulated broker and an Interactive Brokers adapter. Rollout stages,
+  safeguards and the runbook: [docs/ROLLOUT.md](docs/ROLLOUT.md).
+
+```bash
+cd backend && pip install -r requirements-dev.txt && python -m pytest tests
+```
+
 Caddy provisions Let's Encrypt certificates automatically. The app does not run
 its own scheduler — two host cron jobs drive the weekly batch and daily
 market summary; see `scripts/weekly-batch.sh` and `scripts/daily-market-summary.sh`

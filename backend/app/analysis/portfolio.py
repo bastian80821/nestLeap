@@ -1,11 +1,10 @@
 """
 DCA portfolio engine.
 
-Strategy:
-- Each batch run adds $1,000 of fresh capital.
-- Sell all positions whose latest valuation is "Fair Value" or "Overvalued".
-- Buy the top-10 undervalued stocks by overall_score with available cash.
-- Mirror every dollar invested into a virtual SPY position for apples-to-apples comparison.
+Each batch run adds $1,000 of fresh capital, then the rules in strategy.py decide
+the trades (settings.portfolio_strategy selects the preset: "v2" or "legacy").
+Every dollar contributed is mirrored into a virtual SPY position for an
+apples-to-apples comparison.
 """
 
 import logging
@@ -13,15 +12,15 @@ import time as _time
 from datetime import date
 
 import yfinance as yf
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..models import PortfolioSnapshot, PortfolioTrade, StockAnalysis
+from .strategy import PRESETS, MarketState, Position, build_rounds, coverage, decide, update_states
 
 logger = logging.getLogger(__name__)
 
 WEEKLY_CONTRIBUTION = 1_000.0
-TOP_N_BUYS = 10
 
 # ── price helpers ────────────────────────────────────────────────────────────
 
@@ -158,94 +157,86 @@ def _compute_realized_pnl(db: Session) -> dict[int, dict]:
     return realized
 
 
-def _get_latest_analyses(db: Session) -> dict[str, StockAnalysis]:
-    subq = (
-        db.query(StockAnalysis.ticker, func.max(StockAnalysis.id).label("max_id"))
-        .group_by(StockAnalysis.ticker)
-        .subquery()
-    )
-    results = db.query(StockAnalysis).join(subq, StockAnalysis.id == subq.c.max_id).all()
-    return {r.ticker: r for r in results}
-
-
 def _previous_snapshot(db: Session) -> PortfolioSnapshot | None:
     return db.query(PortfolioSnapshot).order_by(PortfolioSnapshot.id.desc()).first()
 
 
 # ── rebalance (called after each batch) ──────────────────────────────────────
 
+def _signal_rounds(db: Session, max_analysis_id: int | None = None):
+    q = (
+        db.query(
+            StockAnalysis.ticker,
+            StockAnalysis.analyzed_at,
+            StockAnalysis.current_price,
+            StockAnalysis.fair_value,
+            StockAnalysis.valuation,
+            StockAnalysis.overall_score,
+            StockAnalysis.conviction,
+        )
+        .order_by(StockAnalysis.analyzed_at.asc(), StockAnalysis.id.asc())
+    )
+    if max_analysis_id is not None:
+        q = q.filter(StockAnalysis.id <= max_analysis_id)
+    return build_rounds(q.all())
+
+
+def _spy_market_state() -> MarketState:
+    """Current SPY price and 200-day SMA. Raises if SPY data is unavailable —
+    better to skip a rebalance than to benchmark against a made-up price."""
+    hist = yf.Ticker("SPY").history(period="14mo", auto_adjust=False)["Close"].dropna()
+    if hist.empty:
+        raise RuntimeError("No SPY price history available")
+    price = _get_live_price("SPY") or float(hist.iloc[-1])
+    sma = float(hist.iloc[-200:].mean()) if len(hist) >= 200 else None
+    return MarketState(spy_price=price, spy_sma200=sma)
+
+
 def rebalance_portfolio(db: Session):
+    cfg = PRESETS[settings.portfolio_strategy]
+    market = _spy_market_state()
+
     prev = _previous_snapshot(db)
     prev_total_invested = prev.total_invested if prev else 0.0
     prev_sp500_shares = prev.sp500_shares if prev else 0.0
-
     new_total_invested = prev_total_invested + WEEKLY_CONTRIBUTION
 
-    holdings = _get_holdings(db)
-
-    # Reconstruct cash: total_invested so far + sell proceeds - buy costs
+    # Cash = contributions so far - buys + sells, plus this round's contribution.
     trades = db.query(PortfolioTrade).all()
-    cash = prev_total_invested  # cash contributed so far (before this round)
+    cash = prev_total_invested + WEEKLY_CONTRIBUTION
     for t in trades:
-        if t.action == "buy":
-            cash -= t.total
-        elif t.action == "sell":
-            cash += t.total
-    cash += WEEKLY_CONTRIBUTION  # add this week's contribution
+        cash += t.total if t.action == "sell" else -t.total
 
-    latest = _get_latest_analyses(db)
+    holdings = {
+        t: Position(shares=p["shares"], cost_basis=p["total_cost"])
+        for t, p in _get_holdings(db).items()
+    }
 
-    # ── SELLS: liquidate positions at Fair Value or Overvalued ────────────
-    sold_tickers = set()
-    for ticker, position in list(holdings.items()):
-        analysis = latest.get(ticker)
-        if not analysis:
-            continue
-        if analysis.valuation in ("Fair Value", "Overvalued"):
-            price = analysis.current_price or position.get("last_price", 0)
-            if price <= 0:
-                continue
-            total = position["shares"] * price
-            cash += total
-            sold_tickers.add(ticker)
-            db.add(PortfolioTrade(
-                ticker=ticker,
-                action="sell",
-                shares=position["shares"],
-                price=price,
-                total=total,
-                reason=f"{analysis.valuation}, score {analysis.overall_score:.0f}" if analysis.overall_score else analysis.valuation,
-            ))
-            logger.info(f"SELL {position['shares']:.2f} {ticker} @ ${price:.2f} ({analysis.valuation})")
+    # Rebuild signal state from the full analysis history; the last round is this batch.
+    rounds = _signal_rounds(db)
+    states: dict = {}
+    for idx, (_, signals) in enumerate(rounds):
+        update_states(states, signals, idx, cfg)
+    current_idx = len(rounds) - 1
+    current_cov = coverage(rounds[-1][1]) if rounds else 0.0
 
-    # ── BUYS: top-10 undervalued by score ────────────────────────────────
-    held_tickers = set(holdings.keys()) - sold_tickers
-    buy_candidates = []
-    for ticker, analysis in latest.items():
-        if analysis.valuation == "Undervalued" and analysis.overall_score is not None:
-            buy_candidates.append((ticker, analysis))
+    orders = decide(cfg, holdings, cash, states, current_idx, current_cov, market)
+    if current_cov < cfg.min_coverage:
+        logger.warning(
+            f"Skipping trades: only {current_cov:.0%} of this round's analyses have a fair value "
+            f"(minimum {cfg.min_coverage:.0%})"
+        )
+    if market.risk_off and cfg.trend_filter:
+        logger.info(f"Risk-off: SPY {market.spy_price:.2f} < 200d SMA {market.spy_sma200:.2f}")
 
-    buy_candidates.sort(key=lambda x: x[1].overall_score or 0, reverse=True)
-    buy_candidates = buy_candidates[:TOP_N_BUYS]
-
-    if buy_candidates and cash > 10:
-        per_stock = cash / len(buy_candidates)
-        for ticker, analysis in buy_candidates:
-            price = analysis.current_price or 0
-            if price <= 0:
-                continue
-            shares = per_stock / price
-            total = shares * price
-            cash -= total
-            db.add(PortfolioTrade(
-                ticker=ticker,
-                action="buy",
-                shares=shares,
-                price=price,
-                total=total,
-                reason=f"Top-{TOP_N_BUYS} undervalued, score {analysis.overall_score:.0f}",
-            ))
-            logger.info(f"BUY {shares:.4f} {ticker} @ ${price:.2f}")
+    for o in orders:
+        cash += o.total if o.action == "sell" else -o.total
+        db.add(PortfolioTrade(
+            ticker=o.ticker, action=o.action, shares=o.shares,
+            price=o.price, total=o.total, reason=o.reason[:250],
+        ))
+        logger.info(f"{o.action.upper()} {o.shares:.4f} {o.ticker} @ ${o.price:.2f} ({o.reason})")
+    db.flush()
 
     # ── Compute holdings value after trades ──────────────────────────────
     holdings_after = _get_holdings(db)
@@ -257,10 +248,9 @@ def rebalance_portfolio(db: Session):
     )
 
     # ── S&P 500 mirror: DCA $WEEKLY_CONTRIBUTION into SPY ────────────────
-    spy_price = _get_live_price("SPY") or 550
-    new_spy_shares = WEEKLY_CONTRIBUTION / spy_price
+    new_spy_shares = WEEKLY_CONTRIBUTION / market.spy_price
     total_sp500_shares = prev_sp500_shares + new_spy_shares
-    sp500_value = total_sp500_shares * spy_price
+    sp500_value = total_sp500_shares * market.spy_price
 
     db.add(PortfolioSnapshot(
         date=date.today(),
@@ -274,10 +264,9 @@ def rebalance_portfolio(db: Session):
     ))
     db.commit()
     logger.info(
-        f"Rebalance complete: invested=${new_total_invested:,.0f}, "
-        f"portfolio=${cash + holdings_value:,.0f}, "
-        f"S&P mirror=${sp500_value:,.0f}, "
-        f"holdings={len(holdings_after)}"
+        f"Rebalance ({cfg.name}) complete: invested=${new_total_invested:,.0f}, "
+        f"portfolio=${cash + holdings_value:,.0f}, cash=${cash:,.0f}, "
+        f"S&P mirror=${sp500_value:,.0f}, holdings={len(holdings_after)}, trades={len(orders)}"
     )
 
 

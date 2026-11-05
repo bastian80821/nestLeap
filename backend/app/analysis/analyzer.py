@@ -22,12 +22,11 @@ def analyze_stock(ticker: str, db: Session) -> StockAnalysis:
 
     stock_data = get_stock_data(ticker)
     scores = compute_scores(stock_data)
-    news = get_stock_news(ticker, max_items=8)
-    news_text = "\n".join(
-        f"- {n.title} ({n.source})" for n in news
-    ) or "No recent news available."
+    previous = None if _is_fresh_look_week() else _previous_analysis(ticker, db)
+    news = get_stock_news(ticker, max_items=10)
+    news_text = format_news(news, previous.analyzed_at if previous else None)
 
-    llm_result = _call_gemini(stock_data, scores, news_text)
+    llm_result = _call_gemini(stock_data, scores, news_text, previous)
 
     analysis = StockAnalysis(
         ticker=ticker,
@@ -69,6 +68,7 @@ def analyze_stock(ticker: str, db: Session) -> StockAnalysis:
         risks=llm_result.get("risks"),
         catalysts=llm_result.get("catalysts"),
         outlook=llm_result.get("outlook"),
+        changes_since_last=llm_result.get("changes_since_last"),
     )
 
     db.add(analysis)
@@ -89,7 +89,144 @@ def get_latest_analysis(ticker: str, db: Session, max_age_days: int = 7):
     )
 
 
-def _call_gemini(data: StockData, scores: Scores, news_text: str) -> dict:
+def _parse_published(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def format_news(news, since: datetime | None, summary_chars: int = 240) -> str:
+    """Headlines with date and summary; items published after `since` are marked [NEW]."""
+    if not news:
+        return "No recent news available."
+    since_utc = since.replace(tzinfo=timezone.utc) if since and since.tzinfo is None else since
+    lines = []
+    for n in news:
+        published = _parse_published(n.published)
+        is_new = bool(since_utc and published and published > since_utc)
+        when = published.strftime("%b %d") if published else "date unknown"
+        line = f"- {'[NEW] ' if is_new else ''}{when} — {n.title} ({n.source})"
+        summary = (getattr(n, "summary", None) or "").strip()
+        if summary:
+            line += f"\n    {summary[:summary_chars]}{'…' if len(summary) > summary_chars else ''}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+# Every FRESH_LOOK_EVERY_WEEKS-th ISO week the analysis runs without the previous assessment,
+# so a fair value can't stay locked to an old anchor indefinitely. The strategy's fair-value
+# smoothing absorbs the extra noise of these weeks.
+FRESH_LOOK_EVERY_WEEKS = 4
+
+
+def _is_fresh_look_week(today: datetime | None = None) -> bool:
+    today = today or datetime.now(timezone.utc)
+    return today.isocalendar().week % FRESH_LOOK_EVERY_WEEKS == 0
+
+
+def _previous_analysis(ticker: str, db: Session) -> StockAnalysis | None:
+    """Most recent analysis of this ticker that produced a fair value."""
+    return (
+        db.query(StockAnalysis)
+        .filter(StockAnalysis.ticker == ticker)
+        .filter(StockAnalysis.fair_value.isnot(None))
+        .order_by(StockAnalysis.analyzed_at.desc(), StockAnalysis.id.desc())
+        .first()
+    )
+
+
+# Metrics compared against the previous analysis: (attribute, label, unit, "material" threshold).
+# A change is listed when it moves by more than the threshold (absolute for %, relative for ratios).
+# P/E is deliberately not compared directly: it moves with the price. Implied EPS (price / P/E)
+# only moves when reported earnings or analyst estimates do.
+_TRACKED_METRICS = [
+    ("revenue_growth", "Revenue growth", "%", 2.0),
+    ("earnings_growth", "Earnings growth", "%", 5.0),
+    ("profit_margin", "Profit margin", "%", 1.0),
+    ("operating_margin", "Operating margin", "%", 1.0),
+    ("fcf_yield", "FCF yield", "%", 0.5),
+    ("debt_to_equity", "Debt/Equity", "x", 0.15),
+]
+_EPS_THRESHOLD = 0.03
+
+
+def _implied_eps(price, pe):
+    return price / pe if price and pe and pe > 0 else None
+
+
+def _metric_changes(prev: StockAnalysis, data: StockData) -> list[str]:
+    out = []
+    for label, pe_attr in (("Trailing EPS", "pe_ratio"), ("Forward EPS estimate", "forward_pe")):
+        old = _implied_eps(prev.current_price, getattr(prev, pe_attr, None))
+        new = _implied_eps(data.current_price, getattr(data, pe_attr, None))
+        if old and new and abs(new / old - 1) > _EPS_THRESHOLD:
+            out.append(f"{label} ${old:.2f} -> ${new:.2f} ({(new / old - 1) * 100:+.1f}%)")
+    for attr, label, unit, threshold in _TRACKED_METRICS:
+        old, new = getattr(prev, attr, None), getattr(data, attr, None)
+        if old is None or new is None:
+            continue
+        if unit == "%":
+            if abs(new - old) > threshold:
+                out.append(f"{label} {old:.1f}% -> {new:.1f}%")
+        elif old != 0 and abs(new / old - 1) > threshold:
+            out.append(f"{label} {old:.2f} -> {new:.2f}")
+    return out
+
+
+def _previous_section(prev: StockAnalysis | None, data: StockData) -> str:
+    if prev is None:
+        return "PREVIOUS ASSESSMENT: none — this is the first analysis of this stock.\n"
+
+    price = data.current_price or 0
+    when = prev.analyzed_at.strftime("%B %d, %Y") if prev.analyzed_at else "unknown date"
+    price_move = ""
+    if prev.current_price and price:
+        price_move = f" | Price then ${prev.current_price:.2f} -> now ${price:.2f} ({(price / prev.current_price - 1) * 100:+.1f}%)"
+    changes = _metric_changes(prev, data)
+    changes_text = "; ".join(changes) if changes else "no material change in tracked metrics"
+    earnings_note = ""
+    if data.last_earnings_date and prev.analyzed_at and data.last_earnings_date > prev.analyzed_at.date():
+        earnings_note = (
+            f"\n  >> EARNINGS SINCE THEN: {data.name} reported results on "
+            f"{data.last_earnings_date:%B %d, %Y}, after the previous assessment. Re-derive fair value "
+            f"from the new numbers; use the previous estimate only for comparison."
+        )
+    risks = "; ".join(prev.risks or []) or "n/a"
+    catalysts = "; ".join(prev.catalysts or []) or "n/a"
+
+    return f"""PREVIOUS ASSESSMENT ({when}){price_move}:
+  Fair value: ${prev.fair_value:.2f} | Valuation: {prev.valuation} | Conviction: {prev.conviction} | Score: {prev.overall_score}
+  Thesis: {prev.summary or "n/a"}
+  Risks then: {risks}
+  Catalysts then: {catalysts}
+  Metric changes since then: {changes_text}{earnings_note}
+
+HOW TO USE THE PREVIOUS ASSESSMENT:
+- It is your prior, not your answer. Rebuild the view from today's data and news, then compare.
+- First work out what has materially changed since then: earnings or guidance, a shift in growth,
+  margins or balance sheet (see "Metric changes"), or a risk/catalyst that played out.
+- Read the headlines marked [NEW] (published after the previous assessment). Material events
+  justify a revision even without an earnings report: guidance changes, M&A, regulatory or legal
+  rulings, major contract wins or customer losses, management changes, product failures or
+  recalls, capital actions (large buybacks, dilution, dividend cuts), or a shock to this
+  company's specific industry. Routine commentary, analyst chatter and price-move stories do not.
+- A price move on its own does not change what the business is worth. Do not drag fair value
+  toward the current price just because the price moved.
+- If something material changed, update fair value, valuation and conviction decisively — do not
+  anchor on the old number. If nothing material changed, keep fair value close to the previous
+  estimate rather than re-estimating from scratch.
+- Write the summary, risks and catalysts fresh for today; do not copy the previous wording.
+- In "changes_since_last", name the specific changes (earnings, metric shifts or [NEW] headlines)
+  that drove any revision in 1-2 sentences, or write "No material change" and say why the
+  thesis holds despite the [NEW] headlines.
+"""
+
+
+def _call_gemini(data: StockData, scores: Scores, news_text: str, previous: StockAnalysis | None = None) -> dict:
     """Single LLM call that synthesizes all data into an investment thesis."""
     if not settings.gemini_api_key:
         logger.warning("No Gemini API key configured, returning empty LLM result")
@@ -119,6 +256,7 @@ STOCK: {data.ticker} — {data.name}
 Sector: {data.sector} | Industry: {data.industry}
 Market Cap: ${data.market_cap / 1e9:.1f}B | Price: ${price:.2f}
 {range_str}
+  Last earnings report: {data.last_earnings_date.strftime("%B %d, %Y") if data.last_earnings_date else "unknown"}
 
 VALUATION METRICS:
   P/E: {_fmt(data.pe_ratio)} | Forward P/E: {_fmt(data.forward_pe)} | PEG: {_fmt(data.peg_ratio)}
@@ -147,6 +285,7 @@ DETERMINISTIC SCORES (0-100, based purely on reported metrics):
 RECENT NEWS:
 {news_text}
 
+{_previous_section(previous, data)}
 INSTRUCTIONS:
 - Focus on the 2-5 year investment case. Ignore short-term price noise.
 - Base your fair value primarily on fundamentals (earnings power, growth trajectory, competitive position).
@@ -173,7 +312,8 @@ Respond ONLY with valid JSON, no markdown fences:
   "summary": "<2-3 sentence investment thesis>",
   "risks": ["<specific risk 1>", "<specific risk 2>", "<specific risk 3>"],
   "catalysts": ["<specific catalyst 1>", "<specific catalyst 2>", "<specific catalyst 3>"],
-  "outlook": "<2-3 sentence 2-5 year outlook>"
+  "outlook": "<2-3 sentence 2-5 year outlook>",
+  "changes_since_last": "<1-2 sentences: what changed since the previous assessment and how it moved your view>"
 }}"""
 
     import time

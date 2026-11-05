@@ -42,3 +42,4 @@ env/
 # IDE
 .vscode/
 .idea/
+backtest_data/

@@ -12,8 +12,10 @@ from .analysis.market_summary import generate_market_summary, get_or_generate_su
 from .analysis.metrics import InsufficientDataError
 from .analysis.portfolio import get_portfolio_history, get_portfolio_state, rebalance_portfolio
 from .config import settings
-from .database import Base, engine, get_db
+from .database import Base, engine, get_db, migrate_columns
 from .models import ApiCallLog, StockAnalysis
+from .trading import execution as trading
+from .trading import models as _trading_models  # noqa: F401  (registers trading tables)
 from .schemas import (
     AiMarketSummary,
     BatchStatusResponse,
@@ -34,6 +36,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    migrate_columns()
     logger.info("Database tables created")
     yield
 
@@ -249,3 +252,37 @@ def admin_rebalance(db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Rebalance failed: {e}")
         raise HTTPException(500, f"Rebalance failed: {str(e)}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BROKER TRADING (admin) — approvals and kill switch; trades run from cron.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/admin/trading", dependencies=[Depends(_require_admin)])
+def admin_trading_status(db: Session = Depends(get_db)):
+    return trading.status(db)
+
+
+@app.post("/api/admin/trading/runs/{run_id}/approve", dependencies=[Depends(_require_admin)])
+def admin_trading_approve(run_id: int, db: Session = Depends(get_db)):
+    try:
+        run = trading.decide_run(db, run_id, approve=True, who="admin page")
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    return {"run_id": run.id, "status": run.status}
+
+
+@app.post("/api/admin/trading/runs/{run_id}/reject", dependencies=[Depends(_require_admin)])
+def admin_trading_reject(run_id: int, db: Session = Depends(get_db)):
+    try:
+        run = trading.decide_run(db, run_id, approve=False, who="admin page")
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    return {"run_id": run.id, "status": run.status}
+
+
+@app.post("/api/admin/trading/kill", dependencies=[Depends(_require_admin)])
+def admin_trading_kill(on: bool, reason: str = "admin page", db: Session = Depends(get_db)):
+    trading.set_kill_switch(db, on, reason)
+    on_now, why = trading.kill_switch(db)
+    return {"kill_switch": on_now, "reason": why}

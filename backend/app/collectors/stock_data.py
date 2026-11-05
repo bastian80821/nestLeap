@@ -1,6 +1,7 @@
 """Collect stock fundamentals and price data from yfinance."""
 
 from dataclasses import dataclass, fields
+from datetime import date, datetime, timezone
 from typing import Optional
 
 import yfinance as yf
@@ -43,6 +44,17 @@ class StockData:
     rsi_14: Optional[float] = None
     week_52_low: Optional[float] = None
     week_52_high: Optional[float] = None
+
+    # Date of the most recent earnings report (None if unknown or only a future date is listed).
+    last_earnings_date: Optional[date] = None
+
+
+def _last_earnings_date(info: dict) -> Optional[date]:
+    ts = info.get("earningsTimestamp")
+    if not ts:
+        return None
+    d = datetime.fromtimestamp(ts, timezone.utc).date()
+    return d if d <= datetime.now(timezone.utc).date() else None
 
 
 def get_stock_data(ticker: str) -> StockData:
@@ -108,6 +120,7 @@ def get_stock_data(ticker: str) -> StockData:
         rsi_14=rsi_14,
         week_52_low=info.get("fiftyTwoWeekLow"),
         week_52_high=info.get("fiftyTwoWeekHigh"),
+        last_earnings_date=_last_earnings_date(info),
     )
 
 

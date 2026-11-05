@@ -54,6 +54,7 @@ class StockAnalysis(Base):
     risks = Column(JSON)
     catalysts = Column(JSON)
     outlook = Column(Text)
+    changes_since_last = Column(Text)
 
     analyzed_at = Column(DateTime, server_default=func.now())
 
