@@ -386,3 +386,13 @@ def test_archive_separates_books(env):
         ex.archive_book(db, "paper-sim")  # label already used
     with pytest.raises(ValueError):
         ex.archive_book(db, "live")
+
+
+def test_extra_cash_is_noted_not_flagged(env):
+    db, broker, *_ = env
+    broker.deposit(1_000_000, "EUR")  # e.g. a paper account's play money
+    run = week(db, broker, 0)
+    assert ex.reconcile(db, broker)
+    assert db.query(TradingEvent).filter_by(kind="reconcile_cash", level="warning").count() == 0
+    cash = [c for c in au.weekly_audit(db, broker, run.id).checks if c["name"] == "cash"][0]
+    assert cash["ok"] and "not managed by NestLeap" in cash["detail"]

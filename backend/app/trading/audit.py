@@ -202,8 +202,10 @@ def check_cash(db: Session, broker: Broker, fx: float):
     physical, ledger = ex.cash_check(db, broker, fx)
     if physical < ledger * 0.95 - 5:
         return _check("cash", False, f"account ${physical:,.2f} far below recorded ${ledger:,.2f}")
-    ok = abs(physical - ledger) <= ledger * 0.02 + 5
-    return _check("cash", ok, f"account ${physical:,.2f} vs recorded ${ledger:,.2f}", severity="warning")
+    # Only missing money is a problem; extra cash in the account is never used by NestLeap.
+    ok = physical >= ledger * 0.98 - 5
+    extra = f" (+${physical - ledger:,.2f} not managed by NestLeap)" if physical > ledger * 1.02 + 5 else ""
+    return _check("cash", ok, f"account ${physical:,.2f} vs recorded ${ledger:,.2f}{extra}", severity="warning")
 
 
 # ── performance ──────────────────────────────────────────────────────────────

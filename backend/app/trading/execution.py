@@ -607,8 +607,10 @@ def reconcile(db: Session, broker: Broker, tolerance_shares: float = 1e-3) -> bo
             event(db, "reconcile_cash", f"Account cash ${physical:,.2f} below recorded ${ledger:,.2f} "
                   f"(currency moves or unrecorded withdrawal?)", level="warning", push=True)
         elif physical > ledger * 1.02 + 5:
-            event(db, "reconcile_cash", f"Account cash ${physical:,.2f} above recorded ${ledger:,.2f}: if you "
-                  f"deposited, record it with `trading.sh deposit <amount>`", level="warning", push=True)
+            # Extra cash is never used (buys are limited to pool + proceeds), so it's only noted:
+            # it may be an unrecorded deposit, or simply money kept in the account.
+            event(db, "reconcile_cash", f"Account holds ${physical - ledger:,.2f} more cash than NestLeap manages "
+                  f"(not used; record new deposits with `trading.sh deposit <amount>`)")
     event(db, "reconciled", f"{len(actual)} positions match, no foreign executions; pool "
           f"{settings.trading_currency} {pool_balance(db):,.2f}, proceeds ${proceeds_balance(db):,.2f}")
     return True
