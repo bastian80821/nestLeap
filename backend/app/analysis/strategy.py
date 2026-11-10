@@ -71,6 +71,12 @@ class StrategyConfig:
     # (e.g. $200 a week into 2 stocks) could otherwise not deploy its cash.
     cap_floor: float = 0.0
 
+    # Whole shares only (e.g. brokers that refuse fractional orders via API). Buys then
+    # walk down the ranking and take the best stocks whose share price fits, splitting
+    # the budget as evenly as whole shares allow over up to `top_n` buys. Money that
+    # whole shares can't use stays uninvested.
+    whole_shares: bool = False
+
     # Market regime: while SPY < its 200-day SMA, keep this much of the portfolio in cash.
     # Never sells holdings to raise cash — it only stops deploying new money.
     trend_filter: bool = True
@@ -307,6 +313,8 @@ def decide(
         candidates.append((t, st, headroom))
 
     candidates.sort(key=lambda c: (-(c[1].last_score or 0), c[0]))
+    if cfg.whole_shares:
+        return orders + _whole_share_buys(cfg, candidates, deployable, price_of)
     candidates = candidates[: cfg.top_n]
     if not candidates:
         return orders
@@ -328,6 +336,34 @@ def decide(
             reason = f"Buy: {st.upside():+.0%} upside to fair value, score {st.last_score:.0f}"
         orders.append(Order(t, "buy", amount / px, px, reason))
     return orders
+
+
+def _buy_reason(cfg: StrategyConfig, st: TickerState) -> str:
+    if cfg.signal == "gemini_label":
+        return f"Top-{cfg.top_n} undervalued, score {st.last_score:.0f}"
+    return f"Buy: {st.upside():+.0%} upside to fair value, score {st.last_score:.0f}"
+
+
+def _whole_share_buys(cfg: StrategyConfig, ranked, budget: float, price_of) -> list[Order]:
+    """Up to cfg.top_n buys in whole shares, best-ranked affordable stocks first. Each buy
+    aims for an even share of what's left (budget / remaining slots), rounded down to whole
+    shares but at least one share, so a top pick priced above an even split still gets bought."""
+    out: list[Order] = []
+    slots = cfg.top_n
+    for t, st, headroom in ranked:
+        if slots <= 0 or budget < cfg.min_trade_value:
+            break
+        px = price_of(t)
+        if not px or px > budget or px > headroom:
+            continue
+        qty = max(1, int((budget / slots) // px))
+        qty = min(qty, int(budget // px), int(headroom // px))
+        if qty < 1 or qty * px < cfg.min_trade_value:
+            continue
+        out.append(Order(t, "buy", float(qty), px, f"{_buy_reason(cfg, st)}, {qty} share{'s' if qty > 1 else ''}"))
+        budget -= qty * px
+        slots -= 1
+    return out
 
 
 def _water_fill(budget: float, weights: dict[str, float], caps: dict[str, float]) -> dict[str, float]:

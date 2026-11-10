@@ -42,7 +42,7 @@ FEE_RESERVE_USD = 2.0  # per buy order, kept back for the commission
 
 
 def strategy_config():
-    return V2_LIVE.with_(top_n=settings.trading_max_buys_per_week)
+    return V2_LIVE.with_(top_n=settings.trading_max_buys_per_week, whole_shares=not settings.trading_fractional)
 
 
 # ── events (hash-chained) ────────────────────────────────────────────────────
@@ -446,7 +446,14 @@ def submit(db: Session, broker: Broker, now_utc: datetime | None = None) -> int:
         if px is not None:
             limit = round(px * (1 + off), 2)
             value = min(o.est_value, available - FEE_RESERVE_USD)
-            qty = value / limit if settings.trading_fractional else float(int(value // limit))
+            if settings.trading_fractional:
+                qty = value / limit
+            else:
+                # Keep the proposed whole-share count; drop shares only if the money (at the
+                # limit price, which is up to 0.5% above the estimate) doesn't cover them.
+                qty = float(int(o.quantity))
+                while qty > 0 and qty * limit > available - FEE_RESERVE_USD:
+                    qty -= 1
             if qty * limit < cfg.min_trade_value or qty <= 0:
                 o.status, o.block_reason = "blocked", f"not enough budget (${available:,.0f} available)"
             elif place(o, round(qty, 4), limit):

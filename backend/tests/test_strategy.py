@@ -199,3 +199,45 @@ def test_apply_orders_tracks_cost_basis():
     orders = decide(V2, {"A": Position(10, 800)}, CASH, states, idx, 1.0)
     holdings, cash = apply_orders({"A": Position(10, 800)}, CASH, orders)
     assert "A" not in holdings and cash == pytest.approx(CASH + 1000)
+
+
+# ── whole shares ─────────────────────────────────────────────────────────────
+
+WHOLE = V2.with_(top_n=2, whole_shares=True, cap_floor=500.0, min_trade_value=50.0)
+
+
+def _ranked(prices):
+    """Tickers in rank order (first = best score), all in the buy zone."""
+    return [sig(t, px, fv=px * 1.3, score=99 - i) for i, (t, px) in enumerate(prices)]
+
+
+def test_whole_shares_buys_expensive_top_pick_then_fills_remainder():
+    # This week's real situation: TSM $375 tops the ranking, ~$450 to spend.
+    uni = _ranked([("TSM", 375), ("VLO", 346), ("EOG", 147), ("PSX", 246), ("NFLX", 63)])
+    states, idx = run_rounds(WHOLE, [uni])
+    orders = decide(WHOLE, {}, 450, states, idx, 1.0)
+    assert [(o.ticker, o.shares) for o in orders] == [("TSM", 1.0), ("NFLX", 1.0)]
+    assert sum(o.total for o in orders) <= 450
+
+
+def test_whole_shares_split_evenly_when_affordable():
+    uni = _ranked([("EOG", 147), ("PSX", 246), ("COP", 136)])
+    states, idx = run_rounds(WHOLE, [uni])
+    orders = decide(WHOLE, {}, 450, states, idx, 1.0)
+    assert [(o.ticker, o.shares) for o in orders] == [("EOG", 1.0), ("PSX", 1.0)]
+    assert all(float(o.shares).is_integer() for o in orders)
+
+
+def test_whole_shares_skip_unaffordable_and_use_more_shares_when_cheap():
+    uni = _ranked([("COST", 1046), ("NFLX", 63), ("KO", 70)])
+    states, idx = run_rounds(WHOLE, [uni])
+    orders = {o.ticker: o.shares for o in decide(WHOLE, {}, 450, states, idx, 1.0)}
+    assert "COST" not in orders  # one share costs more than the whole budget
+    assert orders == {"NFLX": 3.0, "KO": 3.0}  # ~$225 each: 3 x 63 = 189, then 3 x 70 = 210
+
+
+def test_whole_shares_respect_position_cap():
+    uni = _ranked([("AAA", 300)])
+    states, idx = run_rounds(WHOLE, [uni])
+    # $500 cap floor: already holding $400 of AAA leaves room for no further $300 share.
+    assert decide(WHOLE, {"AAA": Position(4 / 3, 400)}, 450, states, idx, 1.0) == []

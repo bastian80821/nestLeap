@@ -396,3 +396,21 @@ def test_extra_cash_is_noted_not_flagged(env):
     assert db.query(TradingEvent).filter_by(kind="reconcile_cash", level="warning").count() == 0
     cash = [c for c in au.weekly_audit(db, broker, run.id).checks if c["name"] == "cash"][0]
     assert cash["ok"] and "not managed by NestLeap" in cash["detail"]
+
+
+def test_whole_share_order_survives_limit_price_rounding(env, monkeypatch):
+    db, broker, prices, _ = env
+    monkeypatch.setattr(settings, "trading_fractional", False)
+    for t in TICKERS:
+        prices[t] = 375.0  # one share fits the ~$440 budget, two don't
+    db.add_all([StockAnalysis(ticker=t, name=t, current_price=375.0, fair_value=375.0 * 1.3, valuation="Undervalued",
+                              overall_score=60 + i, conviction=7, analyzed_at=ROUND) for i, t in enumerate(TICKERS)])
+    db.commit()
+    run = ex.propose(db, broker, today=ROUND.date())
+    orders = db.query(TradingOrder).filter_by(run_id=run.id).all()
+    assert [(o.side, o.quantity) for o in orders] == [("buy", 1.0)]
+    ex.decide_run(db, run.id, approve=True)
+    assert ex.submit(db, broker, now_utc=monday_open()) == 1  # limit = 375 * 1.005, still 1 share
+    ex.sync(db, broker)
+    assert list(broker.positions().values())[0].shares == 1.0
+    assert ex.drawn_for_run(db, run.id) <= 400
