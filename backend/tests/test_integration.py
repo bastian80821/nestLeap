@@ -46,7 +46,7 @@ def portfolio_value(db) -> tuple[float, dict[str, float]]:
 
 def test_api_endpoints_respond_with_new_schema():
     db = SessionLocal()
-    add_round(db, datetime(2026, 11, 1, 2), {t: 1.3 for t in TICKERS})
+    add_round(db, datetime.utcnow() - timedelta(days=1), {t: 1.3 for t in TICKERS})  # "recent" = within 7 days
     db.close()
     with TestClient(app) as client:  # runs lifespan: create_all + migrate_columns
         for path in ["/api/health", "/api/dashboard", "/api/stock/T00", "/api/stocks/analyzed",

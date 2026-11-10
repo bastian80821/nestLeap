@@ -286,3 +286,19 @@ def admin_trading_kill(on: bool, reason: str = "admin page", db: Session = Depen
     trading.set_kill_switch(db, on, reason)
     on_now, why = trading.kill_switch(db)
     return {"kill_switch": on_now, "reason": why}
+
+
+@app.get("/api/admin/trading/tax-report", dependencies=[Depends(_require_admin)])
+def admin_trading_tax_report(year: int, db: Session = Depends(get_db)):
+    """German tax worksheet from NestLeap's own records (dividends need the IBKR statement via the CLI)."""
+    import os
+
+    from .trading import tax_de
+
+    data_dir = os.path.dirname(settings.trading_sim_state) or "."
+    try:
+        rep = tax_de.build_report(db, year, settings.trading_mode, None,
+                                  rate_cache=os.path.join(data_dir, "ecb_usd_eur.json"))
+    except Exception as e:
+        raise HTTPException(502, f"Tax report failed: {e}")
+    return rep.summary()

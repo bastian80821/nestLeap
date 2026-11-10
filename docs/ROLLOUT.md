@@ -73,13 +73,30 @@ money on the same days** (and charged the same FX fees), plus fees paid.
 **4. Monthly statement audit (independent source).** Pulls IBKR's back-office activity statement via
 the Flex Web Service, outside the trading API, and checks both directions: every NestLeap fill appears
 with the same quantity, price and commission, and the statement contains no other trades. Setup (once):
-Client Portal → Performance & Reports → Flex Queries → create an Activity query with the *Trades*
-section (include *Order Reference*), note the Query ID; Flex Web Service → generate a token. Put both in
+Client Portal → Performance & Reports → Flex Queries → create an Activity query (XML) with the *Trades*
+section (include *Order Reference*) and the *Cash Transactions* section (dividends and withholding tax,
+used by the tax report), note the Query ID; Flex Web Service → generate a token. Put both in
 `.env` as `IB_FLEX_QUERY_ID` / `IB_FLEX_TOKEN`.
 
 **Tamper evidence.** Each audit notification includes the event-chain head hash. Because the
 notification leaves the server, a later rewrite of the history (even one that recomputes the chain)
 no longer matches the hash on your phone.
+
+## Taxes (Germany)
+
+IBKR withholds no German tax and issues no Steuerbescheinigung: you declare everything in Anlage KAP
+(shares, dividends) and Anlage SO (USD currency results, § 23 EStG). NestLeap prepares the worksheet:
+
+```bash
+./scripts/trading.sh tax-report 2026                              # from NestLeap's records (no dividends)
+./scripts/trading.sh tax-report 2026 --statement - < 2026.xml     # plus dividends/withholding from IBKR
+```
+
+Download the year's statement in Client Portal: run the Flex query for 1 Jan – 31 Dec and save the XML.
+The command prints the Anlage KAP/SO figures and writes per-trade CSVs (FIFO lots, EUR at ECB reference
+rates, currency lots with holding periods) to `/app/data/tax/<year>-<mode>/` for you or your Steuerberater.
+The admin page shows the same summary (without dividends). Not tax advice; check form line numbers on the
+current year's Vordruck.
 
 ## Stage 0 — simulated broker (can start now)
 
@@ -107,6 +124,7 @@ password (Settings → Paper Trading Account). Set up the Flex query and token (
 ```bash
 ./scripts/deploy.sh                 # starts ib-gateway too (profile ibkr)
 ./scripts/trading.sh check          # account must start with DU; fractional what-if must be accepted
+./scripts/trading.sh archive paper-sim   # file the stage-0 simulated records separately
 ./scripts/trading.sh deposit 5000   # the paper account's EUR (record what the strategy may use)
 ./scripts/trading.sh adopt-baseline # only if the paper account already holds positions
 ```

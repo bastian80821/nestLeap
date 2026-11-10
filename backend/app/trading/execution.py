@@ -435,7 +435,7 @@ def submit(db: Session, broker: Broker, now_utc: datetime | None = None) -> int:
                                      note=f"converted {cur} {conv.sold_amount:,.2f} -> USD {conv.bought_amount:,.2f}"))
                 db.commit()
                 event(db, "fx", f"Converted {cur} {conv.sold_amount:,.2f} to USD {conv.bought_amount:,.2f} "
-                      f"at {conv.rate:.4f} (fee USD {conv.fee_usd:.2f})", details=asdict(conv))
+                      f"at {conv.rate:.4f} (fee USD {conv.fee_usd:.2f})", details={**asdict(conv), "mode": mode()})
                 usd = broker.cash("USD")
             except Exception as e:
                 event(db, "fx_failed", f"Currency conversion failed: {e}", level="error")
@@ -612,6 +612,32 @@ def reconcile(db: Session, broker: Broker, tolerance_shares: float = 1e-3) -> bo
     event(db, "reconciled", f"{len(actual)} positions match, no foreign executions; pool "
           f"{settings.trading_currency} {pool_balance(db):,.2f}, proceeds ${proceeds_balance(db):,.2f}")
     return True
+
+
+# ── archive (switching brokers within a mode) ────────────────────────────────
+
+def archive_book(db: Session, label: str) -> dict:
+    """Move the current mode's runs, ledger, audit reports and position settings under
+    `label` (e.g. "paper-sim"), so a new broker starts from a clean book. Nothing is
+    deleted; the move itself is recorded in the hash-chained log."""
+    from .models import AuditReport
+
+    if not label or label in ("paper", "live", "off") or label == mode():
+        raise ValueError("Choose a new label such as 'paper-sim-2026-11'")
+    if db.query(TradingRun).filter_by(mode=label).count() or db.query(TradingLedger).filter_by(mode=label).count():
+        raise ValueError(f"Label {label!r} is already in use")
+    counts = {}
+    for name, model in (("runs", TradingRun), ("ledger_rows", TradingLedger), ("audit_reports", AuditReport)):
+        counts[name] = db.query(model).filter_by(mode=mode()).update({"mode": label}, synchronize_session=False)
+    for key in ("position_baseline", "known_foreign_executions"):
+        row = db.get(TradingSetting, f"{key}_{mode()}")
+        if row:
+            db.add(TradingSetting(key=f"{key}_{label}", value=row.value))
+            db.delete(row)
+    db.commit()
+    event(db, "archived", f"Archived the {mode()!r} book as {label!r}: {counts}", details={"label": label, **counts},
+          push=True)
+    return counts
 
 
 # ── status ───────────────────────────────────────────────────────────────────

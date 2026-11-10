@@ -27,6 +27,8 @@ export default function AdminPage() {
   const [log, setLog] = useState<string[]>([]);
   const [ticker, setTicker] = useState("");
   const [trading, setTrading] = useState<TradingStatus | null>(null);
+  const [taxYear, setTaxYear] = useState(new Date().getFullYear());
+  const [tax, setTax] = useState<Record<string, any> | null>(null);
 
   const addLog = (msg: string) => setLog((prev) => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev]);
 
@@ -121,6 +123,18 @@ export default function AdminPage() {
       addLog(`Error: ${e.message}`);
     }
   };
+
+  const loadTax = async () => {
+    try {
+      addLog(`Building ${taxYear} tax report...`);
+      setTax(await adminFetch(`/api/admin/trading/tax-report?year=${taxYear}`, "GET"));
+    } catch (e: any) {
+      addLog(`Tax report: ${e.message}`);
+    }
+  };
+
+  const eur = (v: number | null | undefined) =>
+    v == null ? "—" : `${v.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
 
   const money = (v: number | null | undefined) =>
     v == null ? "—" : `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -275,6 +289,45 @@ export default function AdminPage() {
                 ))}
               </div>
             </div>
+          </div>
+        )}
+      </div>
+
+      <div className="mb-8">
+        <div className="flex items-center gap-3 mb-3">
+          <h2 className="text-xs text-neutral-500 uppercase tracking-wider">German tax worksheet</h2>
+          <input
+            type="number"
+            value={taxYear}
+            onChange={(e) => setTaxYear(parseInt(e.target.value) || taxYear)}
+            className="bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-xs w-20"
+          />
+          <button onClick={loadTax} className="bg-neutral-800 hover:bg-neutral-700 text-white text-xs px-3 py-1 rounded transition">
+            Tax report
+          </button>
+        </div>
+        {tax && (
+          <div className="bg-neutral-900 border border-neutral-800 rounded p-4 text-xs space-y-3">
+            <p className="text-neutral-500">{tax.year} · {tax.mode} account · not tax advice</p>
+            <div>
+              <p className="text-neutral-300 mb-1">Anlage KAP (foreign capital income, no German tax withheld)</p>
+              <p>Capital income total (share gains + dividends): <b className="text-white">{eur(tax.anlage_kap.capital_income_total_eur)}</b></p>
+              <p>of which gains from share sales: <b className="text-white">{eur(tax.anlage_kap.of_which_share_gains_eur)}</b></p>
+              <p>Losses from share sales: <b className="text-white">{eur(tax.anlage_kap.share_losses_eur)}</b></p>
+              <p>Dividends (gross): <b className="text-white">{eur(tax.anlage_kap.dividends_gross_eur)}</b> · creditable US tax: <b className="text-white">{eur(tax.anlage_kap.creditable_foreign_tax_eur)}</b></p>
+            </div>
+            <div>
+              <p className="text-neutral-300 mb-1">Anlage SO (USD currency gains, held ≤ 1 year)</p>
+              <p>
+                Net: <b className="text-white">{eur(tax.anlage_so_private_sales.currency_net_eur)}</b>
+                {tax.anlage_so_private_sales.below_freigrenze && <span className="text-neutral-500"> (below the €1,000 Freigrenze)</span>}
+              </p>
+            </div>
+            <p>Illustrative Abgeltungsteuer + Soli: <b className="text-white">{eur(tax.illustrative_tax_eur)}</b> <span className="text-neutral-600">— {tax.illustrative_tax_note}</span></p>
+            {tax.warnings?.length > 0 && (
+              <div className="text-amber-400">{tax.warnings.map((w: string, i: number) => <p key={i}>• {w}</p>)}</div>
+            )}
+            <p className="text-neutral-600">Full worksheet with dividends and per-trade CSVs: ./scripts/trading.sh tax-report {tax.year} --statement - &lt; statement.xml</p>
           </div>
         )}
       </div>

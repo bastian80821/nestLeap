@@ -350,3 +350,39 @@ def test_admin_endpoints(env):
         assert client.post(f"/api/admin/trading/runs/{run.id}/approve", headers=h).json()["status"] == "approved"
         assert client.post(f"/api/admin/trading/runs/{run.id}/approve", headers=h).status_code == 409
         assert client.post("/api/admin/trading/kill?on=true&reason=test", headers=h).json()["kill_switch"] is True
+
+
+def test_tax_report_from_trading_records(env, tmp_path):
+    from app.trading import tax_de
+
+    db, broker, prices, _ = env
+    for w in range(4):
+        week(db, broker, w)
+    target = sorted(broker.positions())[0]
+    prices[target] = 102.9  # sold at a gain (within the 3% price-move check)
+    week(db, broker, 4, overrides={target: 0.9})
+    rep = tax_de.build_report(db, 2026, "paper", rates=lambda d: EURUSD)
+    s = rep.summary()
+    sale = [x for x in rep.stock_sales if x.ticker == target][0]
+    assert sale.gain_eur > 0 and s["anlage_kap"]["of_which_share_gains_eur"] > 0
+    assert len([c for c in rep.currency_disposals if c.reason.startswith("buy")]) >= 8
+    assert not any("did not come from a recorded conversion" in w for w in rep.warnings)
+    out = tax_de.write_report(rep, str(tmp_path / "tax"))
+    assert (out / "aktienverkaeufe.csv").read_text().startswith("date;ticker;shares")
+    assert "Anlage KAP" in (out / "uebersicht.txt").read_text()
+
+
+def test_archive_separates_books(env):
+    db, broker, *_ = env
+    week(db, broker, 0)
+    ex.adopt_baseline(db, broker)
+    counts = ex.archive_book(db, "paper-sim")
+    assert counts["runs"] == 1 and counts["ledger_rows"] > 0
+    assert ex.pool_balance(db) == 0 and ex.expected_positions(db) == {}
+    assert db.query(TradingRun).filter_by(mode="paper").count() == 0
+    assert ex.get_setting(db, "position_baseline_paper-sim") is not None
+    assert au.check_event_chain(db)["ok"]
+    with pytest.raises(ValueError):
+        ex.archive_book(db, "paper-sim")  # label already used
+    with pytest.raises(ValueError):
+        ex.archive_book(db, "live")

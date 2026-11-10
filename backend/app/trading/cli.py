@@ -11,9 +11,11 @@ Broker trading commands (run inside the backend container: docker compose exec b
     python -m app.trading.cli adopt-baseline     # once, if the account already held universe stocks
     python -m app.trading.cli check              # verify broker connection (no orders placed)
     python -m app.trading.cli deposit 5000       # record money you added to the pool (pool currency)
+    python -m app.trading.cli archive paper-sim  # file this mode's records under a label (when switching brokers)
     python -m app.trading.cli deposit -1000      # ...or took out
     python -m app.trading.cli audit [--run ID]   # cron: after the week's orders are done
     python -m app.trading.cli audit-statement    # cron: monthly, IBKR Flex statement vs records
+    python -m app.trading.cli tax-report 2026 [--statement FILE|-]   # German tax worksheet (Anlage KAP/SO)
 """
 
 from __future__ import annotations
@@ -55,7 +57,13 @@ def main(argv=None) -> int:
     for name in ("status", "propose", "submit", "reconcile", "adopt-baseline", "check", "audit-statement"):
         sub.add_parser(name)
     sub.add_parser("deposit").add_argument("amount", type=float)
+    sub.add_parser("archive").add_argument("label")
     sub.add_parser("audit").add_argument("--run", type=int, default=None)
+    t = sub.add_parser("tax-report")
+    t.add_argument("year", type=int)
+    t.add_argument("--statement", default=None,
+                   help="IBKR Flex XML for the year incl. Cash Transactions (path, or - for stdin) for dividends")
+    t.add_argument("--out", default=None, help="output folder (default: /app/data/tax/<year>-<mode>)")
     for name in ("approve", "reject"):
         sub.add_parser(name).add_argument("run_id", type=int)
     sub.add_parser("sync").add_argument("--eod", action="store_true", help="cancel unfilled orders")
@@ -73,6 +81,25 @@ def main(argv=None) -> int:
             return 0
         if args.cmd == "kill":
             ex.set_kill_switch(db, args.state == "on", args.reason)
+            return 0
+        if args.cmd == "tax-report":
+            import os
+            from . import tax_de
+
+            xml = None
+            if args.statement == "-":
+                xml = sys.stdin.read()
+            elif args.statement:
+                xml = open(args.statement).read()
+            data_dir = os.path.dirname(settings.trading_sim_state) or "."
+            rep = tax_de.build_report(db, args.year, settings.trading_mode, xml,
+                                      rate_cache=os.path.join(data_dir, "ecb_usd_eur.json"))
+            out = tax_de.write_report(rep, args.out or os.path.join(data_dir, "tax", f"{args.year}-{settings.trading_mode}"))
+            print(tax_de.summary_text(rep))
+            print(f"\nDetail files (CSV, ';'-separated) in {out}")
+            return 0
+        if args.cmd == "archive":
+            print(ex.archive_book(db, args.label))
             return 0
         if args.cmd in ("approve", "reject"):
             run = ex.decide_run(db, args.run_id, approve=args.cmd == "approve", who="cli")

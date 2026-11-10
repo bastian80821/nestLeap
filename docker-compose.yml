@@ -75,8 +75,11 @@ services:
       - AUTO_RESTART_TIME=11:59 PM
       - RELOGIN_AFTER_TWOFA_TIMEOUT=yes
       - TIME_ZONE=America/New_York
+      # Persist only IBC/gateway settings (as the image's README recommends), never the
+      # Jts install folder, so image upgrades really upgrade the gateway.
+      - TWS_SETTINGS_PATH=/home/ibgateway/tws_settings
     volumes:
-      - ib_settings:/home/ibgateway/Jts
+      - ib_settings:/home/ibgateway/tws_settings
 
 volumes:
   db_data:
