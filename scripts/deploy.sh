@@ -19,6 +19,12 @@ echo "   $before -> $after"
 profiles=""
 if grep -qE '^TRADING_BROKER=ibkr' .env 2>/dev/null; then profiles="--profile ibkr"; fi
 
+if [ -n "$profiles" ]; then
+  # The gateway runs as uid 1000; a fresh settings volume is created root-owned.
+  docker volume create stock_platform_ib_settings >/dev/null
+  docker run --rm --user 0 -v stock_platform_ib_settings:/d --entrypoint chown ghcr.io/gnzsnz/ib-gateway:stable -R 1000:1000 /d
+fi
+
 echo "== Building and starting"
 docker compose $profiles up -d --build
 

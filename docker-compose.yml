@@ -74,6 +74,9 @@ services:
       - TWOFA_TIMEOUT_ACTION=restart
       - AUTO_RESTART_TIME=11:59 PM
       - RELOGIN_AFTER_TWOFA_TIMEOUT=yes
+      # If the same username is logged in elsewhere, this session takes over instead of
+      # waiting for a click (one session per username at IBKR).
+      - EXISTING_SESSION_DETECTED_ACTION=primary
       - TIME_ZONE=America/New_York
       # Persist only IBC/gateway settings (as the image's README recommends), never the
       # Jts install folder, so image upgrades really upgrade the gateway.
