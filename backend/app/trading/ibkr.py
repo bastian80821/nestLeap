@@ -84,10 +84,19 @@ class IBKRBroker:
         return self._account
 
     def cash_balances(self) -> dict[str, float]:
-        out = {}
-        for v in self._conn().accountValues(self._account):
-            if v.tag == "CashBalance" and v.currency not in ("BASE", "") and float(v.value or 0):
-                out[v.currency] = float(v.value)
+        """Cash per currency. IBKR reports per-currency balances as CashBalance or
+        $LEDGER-CashBalance depending on the account; TotalCashValue (base currency only)
+        is the fallback when neither is present."""
+        values = self._conn().accountValues(self._account)
+        out: dict[str, float] = {}
+        for tag in ("CashBalance", "$LEDGER-CashBalance"):
+            for v in values:
+                if v.tag == tag and v.currency not in ("BASE", "") and float(v.value or 0):
+                    out.setdefault(v.currency, float(v.value))
+        if not out:
+            for v in values:
+                if v.tag == "TotalCashValue" and v.currency not in ("BASE", "") and float(v.value or 0):
+                    out[v.currency] = float(v.value)
         return out
 
     def cash(self, currency: str = "USD") -> float:

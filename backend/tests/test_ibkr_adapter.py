@@ -118,3 +118,11 @@ def test_cancel_only_open_orders(broker):
     broker._ib.placed[0].orderStatus.status = "Filled"
     broker.cancel(oid)
     assert broker._ib.cancelled == [9001]
+
+
+def test_cash_falls_back_to_ledger_and_total_cash(broker):
+    broker._ib.accountValues = lambda acct: [NS(tag="$LEDGER-CashBalance", currency="EUR", value="1000000.00"),
+                                             NS(tag="$LEDGER-CashBalance", currency="BASE", value="1000000.00")]
+    assert broker.cash_balances() == {"EUR": 1000000.0}
+    broker._ib.accountValues = lambda acct: [NS(tag="TotalCashValue", currency="EUR", value="1000000.00")]
+    assert broker.cash("EUR") == 1000000.0 and broker.cash("USD") == 0.0
