@@ -55,6 +55,9 @@ class StubIB:
     def reqExecutions(self):
         return self._fills
 
+    def fills(self):
+        return self._fills
+
     def cancelOrder(self, order):
         self.cancelled.append(order.permId)
 

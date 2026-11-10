@@ -414,3 +414,35 @@ def test_whole_share_order_survives_limit_price_rounding(env, monkeypatch):
     ex.sync(db, broker)
     assert list(broker.positions().values())[0].shares == 1.0
     assert ex.drawn_for_run(db, run.id) <= 400
+
+
+def test_late_commission_is_booked_on_next_sync(env):
+    db, broker, *_ = env
+    run = week(db, broker, 0)
+    o = db.query(TradingOrder).filter_by(run_id=run.id, status="filled").first()
+    real_fee = o.commission
+    # Simulate IBKR: the fill was booked before its commission report arrived.
+    o.commission = 0.0
+    db.query(TradingLedger).filter_by(order_id=o.id).delete()
+    db.commit()
+    ex._book_fill(db, o)
+    db.commit()
+    ex.order_event(db, o)
+    broker.name = "ibkr"
+    broker._account = "DU123"
+    assert ex.refresh_commissions(db, broker) == 1
+    assert db.get(TradingOrder, o.id).commission == pytest.approx(real_fee)
+    report = au.weekly_audit(db, broker, run.id)
+    assert "ledger_integrity" not in failed(report) and "fees" not in failed(report)
+
+
+def test_audit_flags_ibkr_fill_without_commission(env):
+    db, broker, *_ = env
+    run = week(db, broker, 0)
+    run_row = db.get(TradingRun, run.id)
+    run_row.broker = "ibkr"
+    for o in db.query(TradingOrder).filter_by(run_id=run.id):
+        o.commission = 0.0
+    db.commit()
+    fees = [c for c in au.weekly_audit(db, broker, run.id).checks if c["name"] == "fees"][0]
+    assert not fees["ok"] and "without a commission" in fees["detail"]

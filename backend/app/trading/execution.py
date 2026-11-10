@@ -521,9 +521,55 @@ def _sync_orders(db: Session, broker: Broker, orders, end_of_day: bool = False) 
     return counts
 
 
+def _book_extra_fee(db: Session, o: TradingOrder, fee: float):
+    """Book a commission that arrived after the fill was booked (IBKR reports it separately)."""
+    desc = f"late commission {o.ticker} #{o.id}: ${fee:.2f}"
+    if o.side == "sell":
+        db.add(TradingLedger(mode=mode(), bucket="proceeds", currency="USD", kind="sell", amount=-fee,
+                             run_id=o.run_id, order_id=o.id, note=desc))
+        return
+    from_proceeds = min(max(proceeds_balance(db), 0.0), fee)
+    if from_proceeds > 0:
+        db.add(TradingLedger(mode=mode(), bucket="proceeds", currency="USD", kind="buy", amount=-from_proceeds,
+                             run_id=o.run_id, order_id=o.id, note=desc))
+    rest = fee - from_proceeds
+    if rest > 1e-9:
+        fx = fx_rate(settings.trading_currency) or db.get(TradingRun, o.run_id).fx_rate
+        db.add(TradingLedger(mode=mode(), bucket="pool", currency=settings.trading_currency, kind="draw",
+                             amount=-rest / fx, fx_rate=fx, run_id=o.run_id, order_id=o.id, note=desc))
+
+
+def refresh_commissions(db: Session, broker: Broker, days: int = 5) -> int:
+    """Re-read commissions for recent fills recorded without one, and book the difference."""
+    from datetime import timedelta
+
+    since = _now() - timedelta(days=days)
+    rows = (db.query(TradingOrder).join(TradingRun, TradingRun.id == TradingOrder.run_id)
+            .filter(TradingRun.mode == mode(), TradingOrder.status == "filled", TradingOrder.filled_qty > 0,
+                    TradingOrder.updated_at >= since,
+                    (TradingOrder.commission.is_(None)) | (TradingOrder.commission <= 0)).all())
+    fixed = 0
+    for o in rows:
+        try:
+            upd = broker.order_update(o.broker_order_id)
+        except Exception as e:
+            event(db, "sync_failed", f"commission lookup {o.ticker} #{o.id}: {e}", level="warning")
+            continue
+        if upd.commission and upd.commission > 0:
+            _book_extra_fee(db, o, upd.commission)
+            o.commission = upd.commission
+            o.updated_at = _now()
+            db.commit()
+            order_event(db, o, f"commission ${upd.commission:.2f} reported after the fill")
+            fixed += 1
+    return fixed
+
+
 def sync(db: Session, broker: Broker, end_of_day: bool = False) -> dict:
     if mode() not in ("paper", "live"):
         return {}
+    if broker.name == "ibkr":
+        refresh_commissions(db, broker)
     open_orders = (db.query(TradingOrder).join(TradingRun, TradingRun.id == TradingOrder.run_id)
                    .filter(TradingRun.mode == mode(), TradingOrder.status.in_(OPEN_STATUSES)).all())
     counts = _sync_orders(db, broker, open_orders, end_of_day)

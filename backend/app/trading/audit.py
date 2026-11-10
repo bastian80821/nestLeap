@@ -153,7 +153,9 @@ def check_fees(db: Session, run: TradingRun):
     odd = []
     for o in db.query(TradingOrder).filter(TradingOrder.run_id == run.id, TradingOrder.filled_qty > 0):
         expected = ibkr_fee(o.filled_qty, o.avg_fill_price or 0)
-        if (o.commission or 0) > max(expected * 1.5, expected + 0.5):
+        if run.broker == "ibkr" and not o.commission:
+            odd.append(f"#{o.id} {o.ticker} recorded without a commission (IBKR always charges one)")
+        elif (o.commission or 0) > max(expected * 1.5, expected + 0.5):
             odd.append(f"#{o.id} {o.ticker} fee ${o.commission:.2f} vs ~${expected:.2f}")
     return _check("fees", not odd, "; ".join(odd) or "commissions in line with IBKR pricing", severity="warning")
 

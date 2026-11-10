@@ -153,7 +153,9 @@ class IBKRBroker:
     def order_update(self, broker_order_id) -> OrderUpdate:
         ib = self._conn()
         perm = int(broker_order_id)
-        fills = [f for f in ib.reqExecutions() if f.execution.permId == perm]
+        ib.reqExecutions()
+        ib.sleep(2)  # commission reports arrive shortly after the executions
+        fills = [f for f in ib.fills() if f.execution.permId == perm]
         filled = sum(float(f.execution.shares) for f in fills)
         avg = sum(float(f.execution.shares) * f.execution.price for f in fills) / filled if filled else None
         commission = sum((f.commissionReport.commission or 0.0) for f in fills if f.commissionReport)
