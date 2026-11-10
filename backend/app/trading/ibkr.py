@@ -187,9 +187,23 @@ class IBKRBroker:
             msgs = "; ".join(e.message for e in trade.log if e.message)
             raise RuntimeError(f"FX conversion not filled ({trade.orderStatus.status}): {msgs}")
         filled = float(trade.orderStatus.filled)
-        rate = float(trade.orderStatus.avgFillPrice)
-        fee = sum((f.commissionReport.commission or 0.0) for f in trade.fills if f.commissionReport)
-        return Conversion(sell_currency, filled, buy_currency, filled * rate - fee, rate, fee)
+        rate = float(trade.orderStatus.avgFillPrice)  # buy currency per sell currency
+        # IBKR may charge the fee in either currency (seen: EUR for EUR.USD). Express it in
+        # USD for the record, and only reduce the amount received if it was taken from it.
+        bought, fee_usd = filled * rate, 0.0
+        for f in trade.fills:
+            cr = f.commissionReport
+            if not cr or not cr.commission:
+                continue
+            cur = (cr.currency or "").upper()
+            if cur == buy_currency.upper():
+                bought -= cr.commission
+                fee_usd += cr.commission if cur == "USD" else cr.commission * rate
+            elif cur == sell_currency.upper():
+                fee_usd += cr.commission * rate if buy_currency.upper() == "USD" else cr.commission
+            else:
+                fee_usd += cr.commission  # unknown currency: record as-is
+        return Conversion(sell_currency, filled, buy_currency, bought, rate, round(fee_usd, 4))
 
     def executions(self) -> list[Execution]:
         """Stock executions IBKR reports for this session (about the last day). The monthly

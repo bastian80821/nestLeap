@@ -126,3 +126,16 @@ def test_cash_falls_back_to_ledger_and_total_cash(broker):
     assert broker.cash_balances() == {"EUR": 1000000.0}
     broker._ib.accountValues = lambda acct: [NS(tag="TotalCashValue", currency="EUR", value="1000000.00")]
     assert broker.cash("EUR") == 1000000.0 and broker.cash("USD") == 0.0
+
+
+def test_conversion_fee_in_sold_currency_does_not_reduce_usd_received(broker):
+    def place(contract, order):
+        t = NS(contract=contract, order=order, log=[],
+               orderStatus=NS(status="Filled", filled=100.0, avgFillPrice=1.12255),
+               fills=[NS(commissionReport=NS(commission=1.78192, currency="EUR"))])
+        return t
+    broker._ib.placeOrder = place
+    import ib_async
+    conv = broker.convert("EUR", "USD", 100.0)
+    assert conv.bought_amount == pytest.approx(112.255)
+    assert conv.fee_usd == pytest.approx(1.78192 * 1.12255, abs=1e-4)
