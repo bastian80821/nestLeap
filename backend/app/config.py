@@ -28,7 +28,11 @@ class Settings(BaseSettings):
     # least this much (IBKR charges ~USD 2 per conversion).
     trading_auto_fx: bool = True
     trading_fx_min_conversion: float = 1000.0
-    trading_price_tolerance: float = 0.03  # block an order if price moved more since the proposal
+    # Price moves between proposal and submission: up to `tolerance` the order goes out as
+    # proposed; up to `max_price_move` it is re-checked against the fair value at the live
+    # price (buys must still be cheap enough, sells still in the sell zone); beyond, skipped.
+    trading_price_tolerance: float = 0.03
+    trading_max_price_move: float = 0.10
     trading_limit_offset: float = 0.005  # limit = price +0.5% for buys, -0.5% for sells
     trading_fractional: bool = True  # broker accepts fractional-share orders
     trading_sim_state: str = "/app/data/sim_broker.json"

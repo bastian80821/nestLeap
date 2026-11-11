@@ -387,9 +387,31 @@ def submit(db: Session, broker: Broker, now_utc: datetime | None = None) -> int:
             o.status, o.block_reason = "blocked", "no current price"
             return None
         move = px / o.est_price - 1
-        if abs(move) > tol:
-            o.status, o.block_reason = "blocked", f"price moved {move:+.1%} since proposal (limit ±{tol:.0%})"
+        if abs(move) <= tol:
+            return px
+        if abs(move) > settings.trading_max_price_move:
+            o.status, o.block_reason = "blocked", (f"price moved {move:+.1%} since proposal "
+                                                   f"(over ±{settings.trading_max_price_move:.0%}; waits for the next analysis)")
             return None
+        # 3-10%: re-check the decision at the live price against the fair value it was based on.
+        if o.side == "sell" and "position cap" in (o.reason or ""):
+            order_event(db, o, f"price moved {move:+.1%}; cap trim still applies")
+            return px
+        analysis = db.get(StockAnalysis, o.analysis_id) if o.analysis_id else None
+        fv = analysis.fair_value if analysis else None
+        if not fv:
+            o.status, o.block_reason = "blocked", f"price moved {move:+.1%} and no fair value to re-check against"
+            return None
+        upside = fv / px - 1
+        if o.side == "buy" and upside < cfg.buy_upside:
+            o.status, o.block_reason = "blocked", (f"price moved {move:+.1%}: upside now {upside:+.0%}, "
+                                                   f"below the {cfg.buy_upside:+.0%} buy line")
+            return None
+        if o.side == "sell" and upside > cfg.sell_upside:
+            o.status, o.block_reason = "blocked", (f"price moved {move:+.1%}: upside now {upside:+.0%}, "
+                                                   f"no longer in the sell zone")
+            return None
+        order_event(db, o, f"price moved {move:+.1%}; re-checked at ${px:.2f}: upside {upside:+.0%}, still valid")
         return px
 
     def place(o, qty, limit):

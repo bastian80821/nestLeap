@@ -42,7 +42,7 @@ Three independent layers. Any critical failure engages the kill switch and notif
 
 **1. Continuous safeguards (prevent).** Kill switch; paper/live lock; EUR 400/week new-money cap and
 2-buy cap enforced at proposal *and* re-checked at submission; per-order and weekly USD caps; universe
-whitelist; price-moved check (±3%); limit orders only; NYSE calendar; stale/incomplete data skipped.
+whitelist; price check at submission (≤3% move: as proposed; 3–10%: re-checked against fair value at the live price; >10%: skipped); limit orders only; NYSE calendar; stale/incomplete data skipped.
 
 **2. Daily reconciliation (detect quickly).** Broker positions must equal recorded fills; every
 execution in the account must be a NestLeap order (a manual trade halts trading until you review it

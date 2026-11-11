@@ -199,16 +199,66 @@ def test_market_calendar():
     assert ex.market_open(datetime(2026, 7, 6, 14, 0))  # summer time
 
 
-def test_price_moved_blocks_order(env):
+def test_price_move_within_3pct_goes_out_unchanged(env):
+    db, broker, prices, _ = env
+    add_round(db, ROUND)
+    run = ex.propose(db, broker, today=ROUND.date())
+    ex.decide_run(db, run.id, approve=True)
+    for o in db.query(TradingOrder).filter_by(run_id=run.id):
+        prices[o.ticker] = 102.5
+    assert ex.submit(db, broker, now_utc=monday_open()) == 2
+
+
+def test_price_move_3_to_10pct_is_rechecked(env):
+    db, broker, prices, _ = env
+    add_round(db, ROUND)  # fair value 130 for every stock
+    run = ex.propose(db, broker, today=ROUND.date())
+    ex.decide_run(db, run.id, approve=True)
+    a, b = db.query(TradingOrder).filter_by(run_id=run.id).all()
+    prices[a.ticker] = 106.0  # upside 130/106 - 1 = +22.6%: still a buy
+    prices[b.ticker] = 94.0   # a dip: upside +38%: still a buy
+    assert ex.submit(db, broker, now_utc=monday_open()) == 2
+    notes = [e.message for e in db.query(TradingEvent).filter_by(kind="order") if "re-checked" in e.message]
+    assert len(notes) == 2
+
+
+def test_price_move_that_kills_the_upside_is_blocked(env):
+    db, broker, prices, _ = env
+    add_round(db, ROUND, fv_ratio=1.15)  # +15% upside at the proposal price
+    run = ex.propose(db, broker, today=ROUND.date())
+    ex.decide_run(db, run.id, approve=True)
+    target = db.query(TradingOrder).filter_by(run_id=run.id).first().ticker
+    prices[target] = 105.0  # upside now 115/105 - 1 = +9.5%, under the +12% buy line
+    assert ex.submit(db, broker, now_utc=monday_open()) == 1
+    o = db.query(TradingOrder).filter_by(run_id=run.id, ticker=target).one()
+    assert o.status == "blocked" and "below the +12% buy line" in o.block_reason
+
+
+def test_price_move_over_10pct_is_blocked(env):
     db, broker, prices, _ = env
     add_round(db, ROUND)
     run = ex.propose(db, broker, today=ROUND.date())
     ex.decide_run(db, run.id, approve=True)
     target = db.query(TradingOrder).filter_by(run_id=run.id).first().ticker
-    prices[target] = 104.0
+    prices[target] = 111.0
     assert ex.submit(db, broker, now_utc=monday_open()) == 1
     o = db.query(TradingOrder).filter_by(run_id=run.id, ticker=target).one()
-    assert o.status == "blocked" and "price moved" in o.block_reason
+    assert o.status == "blocked" and "over ±10%" in o.block_reason
+
+
+def test_sell_rechecked_against_sell_zone(env):
+    db, broker, prices, _ = env
+    for w in range(3):
+        week(db, broker, w)
+    target = sorted(broker.positions())[0]
+    add_round(db, ROUND + timedelta(weeks=3), overrides={target: 0.9})  # fair value 90: sell zone
+    run = ex.propose(db, broker, today=(ROUND + timedelta(weeks=3)).date())
+    ex.decide_run(db, run.id, approve=True)
+    prices[target] = 85.0  # -15% would be skipped; try -6%: upside 90/94 - 1 = -4%, still a sell
+    prices[target] = 94.0
+    ex.submit(db, broker, now_utc=monday_open(3))
+    sell = db.query(TradingOrder).filter_by(run_id=run.id, ticker=target, side="sell").one()
+    assert sell.status in ("submitted", "filled")
 
 
 def test_stale_analyses_are_not_traded(env):
